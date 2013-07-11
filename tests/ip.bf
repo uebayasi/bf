@@ -1,0 +1,17 @@
+# RFC 791 - INTERNET PROTOCOL
+# 3.1.  Internet Header Format
+prefix	IP
+endian	big
+size	160
+4	VERSION
+4	IHL
+8	TYPE
+16	LEN
+16	ID
+3	FLAGS
+13	FRAGOFF
+8	TTL
+8	PROTO
+16	CKSUM
+32	SRC
+32	DST
