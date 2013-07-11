@@ -225,8 +225,10 @@ setup(int argc, char *argv[])
 static void
 start(void)
 {
-	if (global->full)
+	if (global->full) {
 		printf("#include <bf.h>\n");
+	}
+
 }
 
 static void
@@ -343,9 +345,11 @@ static void unaligned_maskstr(char *, size_t, const struct accs *);
 static void
 field_print(const struct field *field)
 {
-	putchar('\n');
-
 	const char *fmt = "/* field: name=%s offset=%d width=%d */\n";
+
+	static int once = 0;
+	if (once++ != 0)
+		putchar('\n');
 
 	if (field->name == NULL) {
 		/* Unused bits (pads). */
@@ -408,20 +412,25 @@ print_accs(const struct accs *accs)
 	printf("#define %s_INDEX_%d %d\n", prefixstr, A, accs->index);
 
 	if (global->full) {
-		printf("#define %s_OCV_%d(p) (*((const uint%d_t *)(p) + %s_INDEX_%d))\n",
+		printf("#define %s_OCV_%d(p) "
+		    "(*((const uint%d_t *)(p) + %s_INDEX_%d))\n",
 		    prefixstr, A, A, prefixstr, A);
 		printf("#define %s_OV_%d(p) (*((uint%d_t *)(p) + %s_INDEX_%d))\n",
 		    prefixstr, A, A, prefixstr, A);
 	}
 
+	char swapstr[16];
+	snprintf(swapstr, sizeof(swapstr), "_BfSwap%s%d",
+	    (global->target == LITTLE) ? "Le" : "Be", A >> 3);
+	printf("#define %s_SWAP_%d %s\n",
+	    prefixstr, A, swapstr);
+
 	if (global->full) {
-		char swapstr[16];
-		snprintf(swapstr, sizeof(swapstr), "_BfSwap%s%d",
-		    (global->target == LITTLE) ? "Le" : "Be", A >> 3);
-		printf("#define %s_CV_%d(p) %s(%s_OCV_%d(p))\n",
-		    prefixstr, A, swapstr, prefixstr, A);
-		printf("#define %s_V_%d(p, v) do { %s_OV_%d(p) = %s(v); } while (0)\n",
-		    prefixstr, A, prefixstr, A, swapstr);
+		printf("#define %s_CV_%d(p) (%s_SWAP_%d(%s_OCV_%d(p)))\n",
+		    prefixstr, A, prefixstr, A, prefixstr, A);
+		printf("#define %s_V_%d(p, v) do "
+		    "{ %s_OV_%d(p) = %s_SWAP_%d(v); } while (0)\n",
+		    prefixstr, A, prefixstr, A, prefixstr, A);
 	}
 
 	static char readstr[256];
