@@ -228,7 +228,6 @@ start(void)
 	if (global->full) {
 		printf("#include <bf.h>\n");
 	}
-
 }
 
 static void
@@ -397,6 +396,7 @@ print_field(const struct field *field)
 	}
 }
 
+/* Print accessors.  Assume the resulting code uses bf.h. */
 static void
 print_accs(const struct accs *accs)
 {
@@ -408,29 +408,29 @@ print_accs(const struct accs *accs)
 	snprintf(prefixstr, sizeof(prefixstr), "%s%s%s",
 	    global->prefix->name ? global->prefix->name : "",
 	    global->prefix->name ? "_" : "", name);
+#define P prefixstr
 
-	printf("#define %s_INDEX_%d %d\n", prefixstr, A, accs->index);
+	printf("#define %s_INDEX_%d %d\n", P, A, accs->index);
 
 	if (global->full) {
 		printf("#define %s_OCV_%d(p) "
 		    "(*((const uint%d_t *)(p) + %s_INDEX_%d))\n",
-		    prefixstr, A, A, prefixstr, A);
+		    P, A, A, P, A);
 		printf("#define %s_OV_%d(p) (*((uint%d_t *)(p) + %s_INDEX_%d))\n",
-		    prefixstr, A, A, prefixstr, A);
+		    P, A, A, P, A);
 	}
 
 	char swapstr[16];
 	snprintf(swapstr, sizeof(swapstr), "_BfSwap%s%d",
 	    (global->target == LITTLE) ? "Le" : "Be", A >> 3);
-	printf("#define %s_SWAP_%d %s\n",
-	    prefixstr, A, swapstr);
+	printf("#define %s_SWAP_%d %s\n", P, A, swapstr);
 
 	if (global->full) {
 		printf("#define %s_CV_%d(p) (%s_SWAP_%d(%s_OCV_%d(p)))\n",
-		    prefixstr, A, prefixstr, A, prefixstr, A);
+		    P, A, P, A, P, A);
 		printf("#define %s_V_%d(p, v) do "
 		    "{ %s_OV_%d(p) = %s_SWAP_%d(v); } while (0)\n",
-		    prefixstr, A, prefixstr, A, prefixstr, A);
+		    P, A, P, A, P, A);
 	}
 
 	static char readstr[256];
@@ -441,53 +441,61 @@ print_accs(const struct accs *accs)
 	if (accs->accs == accs->align) {
 		if (global->full) {
 			snprintf(readstr, sizeof(readstr),
-			    "%s_CV_%d(p)", prefixstr, A);
+			    "%s_CV_%d(p)", P, A);
 			snprintf(issetstr, sizeof(readstr),
-			    "(%s_CV_%d(p) != 0)", prefixstr, A);
+			    "(%s_CV_%d(p) != 0)", P, A);
 			snprintf(clearstr, sizeof(clearstr),
-			    "do { %s_V_%d(p, 0); } while (0)", prefixstr, A);
+			    "do { %s_V_%d(p, 0); } while (0)", P, A);
 			snprintf(setstr, sizeof(setstr),
-			    "do { %s_V_%d(p, (%s_CV_%d | ~%s_CV_%d(p))); } while (0)",
-			    prefixstr, A, prefixstr, A, prefixstr, A);
+			    "do { "
+			        "%s_V_%d(p, (%s_CV_%d | ~%s_CV_%d(p))); "
+			    "} while (0)",
+			    P, A, P, A, P, A);
 			snprintf(writestr, sizeof(writestr),
 			    "do { %s_V_%d(p, v); } while (0)",
-			    prefixstr, A);
+			    P, A);
 		}
 	} else {
 		char maskstr[32];
 		unaligned_maskstr(maskstr, sizeof(maskstr), accs);
 		printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
-		    prefixstr, A, A, maskstr);
+		    P, A, A, maskstr);
 		printf("#define %s_SHIFT_%d %d\n",
-		    prefixstr, A, accs->shift);
+		    P, A, accs->shift);
 		if (global->full) {
 			snprintf(readstr, sizeof(readstr),
 			    "((%s_CV_%d(p) & %s_MASK_%d) >> %s_SHIFT_%d)",
-			    prefixstr, A, prefixstr, A, prefixstr, A);
+			    P, A, P, A, P, A);
 			snprintf(issetstr, sizeof(issetstr),
 			    "((%s_CV_%d(p) & %s_MASK_%d) != 0)",
-			    prefixstr, A, prefixstr, A);
+			    P, A, P, A);
 			snprintf(clearstr, sizeof(clearstr),
-			    "do { %s_V_%d(p, (%s_CV_%d(p) & ~%s_MASK_%d)); } while (0)",
-			    prefixstr, A, prefixstr, A, prefixstr, A);
+			    "do { "
+			        "%s_V_%d(p, (%s_CV_%d(p) & ~%s_MASK_%d)); "
+			    "} while (0)",
+			    P, A, P, A, P, A);
 			snprintf(setstr, sizeof(setstr),
-			    "do { %s_V_%d(p, (%s_CV_%d(p) | ((~%s_CV_%d(p)) & %s_MASK_%d))); } while (0)",
-			    prefixstr, A, prefixstr, A, prefixstr, A, prefixstr, A);
+			    "do { "
+			        "%s_V_%d(p, (%s_CV_%d(p) | "
+				"((~%s_CV_%d(p)) & %s_MASK_%d))); "
+			    "} while (0)",
+			    P, A, P, A, P, A, P, A);
 			snprintf(writestr, sizeof(writestr),
 			    "do { "
 				"%s_V_%d(p, "
 			            "(%s_CV_%d(p) & ~%s_MASK_%d) | "
 				    "(((v) << %s_SHIFT_%d) & %s_MASK_%d)); "
 			    "} while (0)",
-			    prefixstr, A, prefixstr, A, prefixstr, A, prefixstr, A, prefixstr, A);
+			    P, A, P, A, P, A,
+			    P, A, P, A);
 		}
 	}
 	if (global->full) {
-		printf("#define %s_READ_%d(p) %s\n", prefixstr, A, readstr);
-		printf("#define %s_ISSET_%d(p) %s\n", prefixstr, A, issetstr);
-		printf("#define %s_CLEAR_%d(p) %s\n", prefixstr, A, clearstr);
-		printf("#define %s_SET_%d(p) %s\n", prefixstr, A, setstr);
-		printf("#define %s_WRITE_%d(p, v) %s\n", prefixstr, A, writestr);
+		printf("#define %s_READ_%d(p) %s\n", P, A, readstr);
+		printf("#define %s_ISSET_%d(p) %s\n", P, A, issetstr);
+		printf("#define %s_CLEAR_%d(p) %s\n", P, A, clearstr);
+		printf("#define %s_SET_%d(p) %s\n", P, A, setstr);
+		printf("#define %s_WRITE_%d(p, v) %s\n", P, A, writestr);
 	}
 }
 
@@ -497,7 +505,15 @@ calc_access_size(struct accs *accs)
 	if (accs->align > 0) {
 		return accs->align;
 	} else {
-		/* (Minimal) access size. */
+		/*
+		 * Determine the (minimal) access size.
+		 *
+		 * If a 2-bit maak crosses no 8-bit boundary (0x18 for
+		 * example), it can be accessed by 8-bit.  If it crosses
+		 * 8-bit boundary (0x0180 for example), 16-bit access is
+		 * needed.  Find the biggest boundary (8/16/32/64 in
+		 * order), then it is the minimal access size!
+		 */
 
 		/* 8-bit indexes. */
 		int i = accs->S / NBBY;
