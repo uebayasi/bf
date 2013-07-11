@@ -16,7 +16,7 @@
  */
 
 /*
- * bf - Portable bit-field definition
+ * bf - Portable bit-field operation
  */
 
 #include <assert.h>
@@ -407,22 +407,22 @@ print_accs(const struct accs *accs)
 
 	printf("#define %s_INDEX_%d %d\n", prefixstr, A, accs->index);
 
-    if (global->full) {
-	printf("#define %s_OCV_%d(p) (*((const uint%d_t *)(p) + %s_INDEX_%d))\n",
-	    prefixstr, A, A, prefixstr, A);
-	printf("#define %s_OV_%d(p) (*((uint%d_t *)(p) + %s_INDEX_%d))\n",
-	    prefixstr, A, A, prefixstr, A);
-    }
+	if (global->full) {
+		printf("#define %s_OCV_%d(p) (*((const uint%d_t *)(p) + %s_INDEX_%d))\n",
+		    prefixstr, A, A, prefixstr, A);
+		printf("#define %s_OV_%d(p) (*((uint%d_t *)(p) + %s_INDEX_%d))\n",
+		    prefixstr, A, A, prefixstr, A);
+	}
 
-    if (global->full) {
-	char swapstr[16];
-	snprintf(swapstr, sizeof(swapstr), "_BfSwap%s%d",
-	    (global->target == LITTLE) ? "Le" : "Be", A >> 3);
-	printf("#define %s_CV_%d(p) %s(%s_OCV_%d(p))\n",
-	    prefixstr, A, swapstr, prefixstr, A);
-	printf("#define %s_V_%d(p, v) do { %s_OV_%d(p) = %s(v); } while (0)\n",
-	    prefixstr, A, prefixstr, A, swapstr);
-    }
+	if (global->full) {
+		char swapstr[16];
+		snprintf(swapstr, sizeof(swapstr), "_BfSwap%s%d",
+		    (global->target == LITTLE) ? "Le" : "Be", A >> 3);
+		printf("#define %s_CV_%d(p) %s(%s_OCV_%d(p))\n",
+		    prefixstr, A, swapstr, prefixstr, A);
+		printf("#define %s_V_%d(p, v) do { %s_OV_%d(p) = %s(v); } while (0)\n",
+		    prefixstr, A, prefixstr, A, swapstr);
+	}
 
 	static char readstr[256];
 	static char issetstr[256];
@@ -430,20 +430,20 @@ print_accs(const struct accs *accs)
 	static char setstr[256];
 	static char writestr[256];
 	if (accs->accs == accs->align) {
-    if (global->full) {
-		snprintf(readstr, sizeof(readstr),
-		    "%s_CV_%d(p)", prefixstr, A);
-		snprintf(issetstr, sizeof(readstr),
-		    "(%s_CV_%d(p) != 0)", prefixstr, A);
-		snprintf(clearstr, sizeof(clearstr),
-		    "do { %s_V_%d(p, 0); } while (0)", prefixstr, A);
-		snprintf(setstr, sizeof(setstr),
-		    "do { %s_V_%d(p, (%s_CV_%d | ~%s_CV_%d(p))); } while (0)",
-		    prefixstr, A, prefixstr, A, prefixstr, A);
-		snprintf(writestr, sizeof(writestr),
-		    "do { %s_V_%d(p, v); } while (0)",
-		    prefixstr, A);
-    }
+		if (global->full) {
+			snprintf(readstr, sizeof(readstr),
+			    "%s_CV_%d(p)", prefixstr, A);
+			snprintf(issetstr, sizeof(readstr),
+			    "(%s_CV_%d(p) != 0)", prefixstr, A);
+			snprintf(clearstr, sizeof(clearstr),
+			    "do { %s_V_%d(p, 0); } while (0)", prefixstr, A);
+			snprintf(setstr, sizeof(setstr),
+			    "do { %s_V_%d(p, (%s_CV_%d | ~%s_CV_%d(p))); } while (0)",
+			    prefixstr, A, prefixstr, A, prefixstr, A);
+			snprintf(writestr, sizeof(writestr),
+			    "do { %s_V_%d(p, v); } while (0)",
+			    prefixstr, A);
+		}
 	} else {
 		char maskstr[32];
 		unaligned_maskstr(maskstr, sizeof(maskstr), accs);
@@ -451,35 +451,35 @@ print_accs(const struct accs *accs)
 		    prefixstr, A, A, maskstr);
 		printf("#define %s_SHIFT_%d %d\n",
 		    prefixstr, A, accs->shift);
-    if (global->full) {
-		snprintf(readstr, sizeof(readstr),
-		    "((%s_CV_%d(p) & %s_MASK_%d) >> %s_SHIFT_%d)",
-		    prefixstr, A, prefixstr, A, prefixstr, A);
-		snprintf(issetstr, sizeof(issetstr),
-		    "((%s_CV_%d(p) & %s_MASK_%d) != 0)",
-		    prefixstr, A, prefixstr, A);
-		snprintf(clearstr, sizeof(clearstr),
-		    "do { %s_V_%d(p, (%s_CV_%d(p) & ~%s_MASK_%d)); } while (0)",
-		    prefixstr, A, prefixstr, A, prefixstr, A);
-		snprintf(setstr, sizeof(setstr),
-		    "do { %s_V_%d(p, (%s_CV_%d(p) | ((~%s_CV_%d(p)) & %s_MASK_%d))); } while (0)",
-		    prefixstr, A, prefixstr, A, prefixstr, A, prefixstr, A);
-		snprintf(writestr, sizeof(writestr),
-		    "do { "
-			"%s_V_%d(p, "
-		            "(%s_CV_%d(p) & ~%s_MASK_%d) | "
-			    "(((v) << %s_SHIFT_%d) & %s_MASK_%d)); "
-		    "} while (0)",
-		    prefixstr, A, prefixstr, A, prefixstr, A, prefixstr, A, prefixstr, A);
-    }
+		if (global->full) {
+			snprintf(readstr, sizeof(readstr),
+			    "((%s_CV_%d(p) & %s_MASK_%d) >> %s_SHIFT_%d)",
+			    prefixstr, A, prefixstr, A, prefixstr, A);
+			snprintf(issetstr, sizeof(issetstr),
+			    "((%s_CV_%d(p) & %s_MASK_%d) != 0)",
+			    prefixstr, A, prefixstr, A);
+			snprintf(clearstr, sizeof(clearstr),
+			    "do { %s_V_%d(p, (%s_CV_%d(p) & ~%s_MASK_%d)); } while (0)",
+			    prefixstr, A, prefixstr, A, prefixstr, A);
+			snprintf(setstr, sizeof(setstr),
+			    "do { %s_V_%d(p, (%s_CV_%d(p) | ((~%s_CV_%d(p)) & %s_MASK_%d))); } while (0)",
+			    prefixstr, A, prefixstr, A, prefixstr, A, prefixstr, A);
+			snprintf(writestr, sizeof(writestr),
+			    "do { "
+				"%s_V_%d(p, "
+			            "(%s_CV_%d(p) & ~%s_MASK_%d) | "
+				    "(((v) << %s_SHIFT_%d) & %s_MASK_%d)); "
+			    "} while (0)",
+			    prefixstr, A, prefixstr, A, prefixstr, A, prefixstr, A, prefixstr, A);
+		}
 	}
-    if (global->full) {
-	printf("#define %s_READ_%d(p) %s\n", prefixstr, A, readstr);
-	printf("#define %s_ISSET_%d(p) %s\n", prefixstr, A, issetstr);
-	printf("#define %s_CLEAR_%d(p) %s\n", prefixstr, A, clearstr);
-	printf("#define %s_SET_%d(p) %s\n", prefixstr, A, setstr);
-	printf("#define %s_WRITE_%d(p, v) %s\n", prefixstr, A, writestr);
-    }
+	if (global->full) {
+		printf("#define %s_READ_%d(p) %s\n", prefixstr, A, readstr);
+		printf("#define %s_ISSET_%d(p) %s\n", prefixstr, A, issetstr);
+		printf("#define %s_CLEAR_%d(p) %s\n", prefixstr, A, clearstr);
+		printf("#define %s_SET_%d(p) %s\n", prefixstr, A, setstr);
+		printf("#define %s_WRITE_%d(p, v) %s\n", prefixstr, A, writestr);
+	}
 }
 
 static int
