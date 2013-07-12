@@ -29,9 +29,11 @@
 
 struct prefix;
 struct field;
+struct enumer;
 
 SIMPLEQ_HEAD(prefixes, prefix);
 SIMPLEQ_HEAD(fields, field);
+SIMPLEQ_HEAD(enumers, enumer);
 struct prefix {
 	SIMPLEQ_ENTRY(prefix) entry;
 	char *name;
@@ -43,6 +45,13 @@ struct field {
 	char *name;
 	int offset;
 	int width;
+	struct enumers enumers;
+	struct enumer *cur_enumer;
+};
+struct enumer {
+	SIMPLEQ_ENTRY(enumer) entry;
+	char *name;
+	int v;
 };
 enum endian {
 	LITTLE = 0,
@@ -53,13 +62,16 @@ static void prefix_start(void);
 static void prefix_stop(void);
 static void field_start(void);
 static void field_stop(void);
+static void enumer_start(void);
+static void enumer_stop(void);
 
 struct global {
 	int verbose;
 	int full;
 	struct prefixes prefixes;
-	struct prefix *cur_prefix;
+	struct prefix *cur_prefix, *prev_prefix;
 	struct field *cur_field, *prev_field;
+	struct enumer *cur_enumer, *prev_enumer;
 	enum endian target;
 } global_storage = {
 	.prefixes = SIMPLEQ_HEAD_INITIALIZER(global_storage.prefixes),
@@ -83,6 +95,7 @@ nl		[\n]
 %s ENDIAN
 %s SIZE
 %s FIELD
+%s FIELD_ENUM
 
 %%
 
@@ -159,6 +172,15 @@ nl		[\n]
 <FIELD>{id} {
 	global->cur_field->name = strdup(yytext);
 }
+<FIELD>{number} {
+	if (global->cur_field->name != NULL) {
+		BEGIN FIELD_ENUM;
+		enumer_start();
+		global->cur_enumer->v = atoi(yytext);
+	} else {
+		/* XXX error */
+	}
+}
 <FIELD>{blank} {
 }
 <FIELD>{char} {
@@ -166,6 +188,18 @@ nl		[\n]
 <FIELD>{nl} {
 	field_stop();
 	BEGIN INITIAL;
+}
+
+<FIELD_ENUM>{id} {
+	assert(global->cur_enumer != NULL);
+	assert(global->cur_enumer->v != -1);
+	global->cur_enumer->name = strdup(yytext);
+	enumer_stop();
+	BEGIN FIELD;
+}
+<FIELD_ENUM>{blank} {
+}
+<FIELD_ENUM>{char} {
 }
 
 %%
@@ -194,6 +228,8 @@ static void prefix_free(struct prefix *);
 static struct field *field_alloc(void);
 static void field_free(struct field *);
 static void field_print(const struct field *);
+static struct enumer *enumer_alloc(void);
+static void enumer_free(struct enumer *);
 
 int
 main(int argc, char *argv[])
@@ -282,14 +318,30 @@ field_stop(void)
 	global->cur_field = NULL;
 }
 
+static void
+enumer_start(void)
+{
+	assert(global->cur_enumer == NULL);
+	assert(global->prev_enumer == NULL);
+	global->cur_enumer = enumer_alloc();
+}
+
+static void
+enumer_stop(void)
+{
+	SIMPLEQ_INSERT_TAIL(&global->cur_field->enumers, global->cur_enumer, entry);
+	global->cur_enumer = NULL;
+	// XXX free'ed at field_free()
+}
+
 static struct prefix *
 prefix_alloc(void)
 {
 	struct prefix *new_prefix;
 
 	new_prefix = calloc(sizeof(*new_prefix), 1);
-	SIMPLEQ_INIT(&new_prefix->fields);
 	SIMPLEQ_INSERT_TAIL(&global->prefixes, new_prefix, entry);
+	SIMPLEQ_INIT(&new_prefix->fields);
 	return new_prefix;
 }
 
@@ -307,13 +359,36 @@ field_alloc(void)
 
 	new_field = calloc(sizeof(*new_field), 1);
 	SIMPLEQ_INSERT_TAIL(&global->cur_prefix->fields, new_field, entry);
+	SIMPLEQ_INIT(&new_field->enumers);
 	return new_field;
 }
 
 static void
 field_free(struct field *field)
 {
+	struct enumer *enumer;
+
+	while ((enumer = SIMPLEQ_FIRST(&field->enumers)) != NULL) {
+		SIMPLEQ_REMOVE(&field->enumers, enumer, enumer, entry);
+		enumer_free(enumer);
+	}
 	free(field);
+}
+
+static struct enumer *
+enumer_alloc(void)
+{
+	struct enumer *new_enumer;
+
+	new_enumer = calloc(sizeof(*new_enumer), 1);
+	new_enumer->v = -1;
+	return new_enumer;
+}
+
+static void
+enumer_free(struct enumer *enumer)
+{
+	free(enumer);
 }
 
 /*
@@ -333,10 +408,11 @@ struct accs {
 };
 
 static void print_field(const struct field *);
-static void print_accs(const struct accs *);
+static void print_accs(const char *, const struct accs *);
 static int calc_access_size(struct accs *);
 static void calc_access_shift(struct accs *);
 static void unaligned_maskstr(char *, size_t, const struct accs *);
+static void print_enumers(const char *, const struct field *);
 
 #define O	accs->field->offset
 #define W	accs->field->width
@@ -386,28 +462,30 @@ print_field(const struct field *field)
 	/* Minimal register access width == alignment size. */
 	const int A = calc_access_size(accs);
 
+	const char * const name = accs->field->name;
+	char prefixstr[256];
+	snprintf(prefixstr, sizeof(prefixstr), "%s%s%s",
+	    global->cur_prefix->name ? global->cur_prefix->name : "",
+	    global->cur_prefix->name ? "_" : "", name);
+
 	/* Privide all access widths >A. */
 	int a;
 	for (a = A; a <= 64; a <<= 1) {
 		accs->accs = a;
 		accs->index = accs->S / accs->accs;
 		calc_access_shift(accs);
-		print_accs(accs);
+		print_accs(prefixstr, accs);
 	}
+
+	/* Define enums. */
+	print_enumers(prefixstr, field);
 }
 
 /* Print accessors.  Assume the resulting code uses bf.h. */
 static void
-print_accs(const struct accs *accs)
+print_accs(const char *prefixstr, const struct accs *accs)
 {
-	const char * const name = accs->field->name;
-
 	const int A = accs->accs;
-	char prefixstr[256];
-
-	snprintf(prefixstr, sizeof(prefixstr), "%s%s%s",
-	    global->cur_prefix->name ? global->cur_prefix->name : "",
-	    global->cur_prefix->name ? "_" : "", name);
 #define P prefixstr
 
 	printf("#define %s_INDEX_%d %d\n", P, A, accs->index);
@@ -581,6 +659,16 @@ unaligned_maskstr(char *str, const size_t len, const struct accs *accs)
 
 		assert(n < len);
 		n += snprintf(str + n, len - n, "%02x", m);
+	}
+}
+
+static void
+print_enumers(const char *prefixstr, const struct field *field)
+{
+	struct enumer *enumer;
+
+	SIMPLEQ_FOREACH(enumer, &field->enumers, entry) {
+		printf("#define %s_ENUM_%s %d\n", P, enumer->name, enumer->v);
 	}
 }
 
