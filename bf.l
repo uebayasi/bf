@@ -680,7 +680,9 @@ make_maskstr(char *str, const size_t len, const struct accs *accs)
 	int i;
 	uint8_t maskvec[8];
 	for (i = 0; i < accs->accs; i += 8) {
-		maskvec[i / 8] = _BfMaskWN(1, MAX(0, s - i), MAX(0, e - i));
+		const int p = MAX(0, s - i);
+		const int q = MAX(0, e - i);
+		maskvec[i / 8] = _BfMaskWN(1, p, q - p);
 	}
 	print_maskvec(str, len, accs->accs, maskvec);
 }
