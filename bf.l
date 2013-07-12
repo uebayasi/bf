@@ -561,10 +561,12 @@ print_accs(const char *prefixstr, const struct accs *accs)
 	} else {
 		char maskstr[32];
 		make_maskstr(maskstr, sizeof(maskstr), accs);
-		printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
-		    P, A, A, maskstr);
 		printf("#define %s_SHIFT_%d %d\n",
 		    P, A, accs->shift);
+		printf("#define %s_WIDTH_%d %d\n",
+		    P, A, accs->field->width);
+		printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
+		    P, A, A, maskstr);
 		if (global->full) {
 			snprintf(readstr, sizeof(readstr),
 			    "((%s_CV_%d(p) & %s_MASK_%d) >> %s_SHIFT_%d)",
