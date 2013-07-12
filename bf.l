@@ -449,15 +449,17 @@ field_print(const struct field *field)
 	const char *fmt = "/* field: name=%s offset=%d width=%d */\n";
 
 	static int once = 0;
-	if (once++ != 0)
-		putchar('\n');
 
 	if (field->name == NULL) {
 		/* Unused bits (pads). */
 		if (global->verbose) {
+			if (once++ != 0)
+				putchar('\n');
 			printf(fmt, "(unused)", field->offset, field->width);
 		}
 	} else {
+		if (once++ != 0)
+			putchar('\n');
 		if (global->verbose) {
 			printf(fmt, field->name, field->offset, field->width);
 		}
