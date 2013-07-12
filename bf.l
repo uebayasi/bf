@@ -292,6 +292,7 @@ prefix_stop(void)
 		if (global->verbose)
 			dump(global->cur_prefix);
 		prefix_free(global->cur_prefix);
+		global->prev_field = NULL;
 		global->cur_prefix = NULL;
 	}
 	assert(global->cur_prefix == NULL);
@@ -311,6 +312,13 @@ field_stop(void)
 	struct field *prev = global->prev_field;
 	const int offset = prev ? (prev->offset + prev->width) : 0;
 
+	if (offset + global->cur_field->width > global->cur_prefix->size) {
+		fprintf(stderr, "%s: field %s exceeding size "
+		    "(offset=%d width=%d size=%d)\n",
+		    __func__, global->cur_field->name,
+		    offset, global->cur_field->width, global->cur_prefix->size);
+		exit(1);
+	}
 	assert(offset + global->cur_field->width <= global->cur_prefix->size);
 	global->cur_field->offset = offset;
 	global->prev_field = global->cur_field;
