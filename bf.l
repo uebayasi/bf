@@ -431,8 +431,10 @@ static void print_field(const struct field *);
 static void print_accs(const char *, const struct accs *);
 static int calc_access_size(struct accs *);
 static void calc_access_shift(struct accs *);
-static void unaligned_maskstr(char *, size_t, const struct accs *);
-static void print_enumers(const char *, const struct field *);
+static void make_maskstr(char *, size_t, const struct accs *);
+static void print_enumers(const char *, const struct accs *);
+static void make_enumerstr(char *, const size_t, const struct accs *, const int);
+static void print_maskvec(char *, const size_t, const int, const uint8_t *);
 
 #define O	accs->field->offset
 #define W	accs->field->width
@@ -500,10 +502,8 @@ print_field(const struct field *field)
 		accs->index = accs->S / accs->accs;
 		calc_access_shift(accs);
 		print_accs(prefixstr, accs);
+		print_enumers(prefixstr, accs);
 	}
-
-	/* Define enums. */
-	print_enumers(prefixstr, field);
 }
 
 /* Print accessors.  Assume the resulting code uses bf.h. */
@@ -560,7 +560,7 @@ print_accs(const char *prefixstr, const struct accs *accs)
 		}
 	} else {
 		char maskstr[32];
-		unaligned_maskstr(maskstr, sizeof(maskstr), accs);
+		make_maskstr(maskstr, sizeof(maskstr), accs);
 		printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
 		    P, A, A, maskstr);
 		printf("#define %s_SHIFT_%d %d\n",
@@ -668,7 +668,7 @@ calc_access_shift(struct accs *accs)
 }
 
 static void
-unaligned_maskstr(char *str, const size_t len, const struct accs *accs)
+make_maskstr(char *str, const size_t len, const struct accs *accs)
 {
 	int a;
 	int n = 0;
@@ -677,23 +677,54 @@ unaligned_maskstr(char *str, const size_t len, const struct accs *accs)
 	const int e = s + (accs->E - accs->S);
 
 	/* Print mask by 8-bit from MSB. */
-	for (a = accs->accs - 8; a >= 0; a -= 8) {
-		const int S = MAX(0, s - a);
-		const int E = MAX(0, e - a);
-		const uint8_t m = _BfMaskWN(1, S, E - S);
+	int i;
+	uint8_t maskvec[8];
+	for (i = 0; i < accs->accs; i += 8) {
+		maskvec[i / 8] = _BfMaskWN(1, MAX(0, s - i), MAX(0, e - i));
+	}
+	print_maskvec(str, len, accs->accs, maskvec);
+}
 
-		assert(n < len);
-		n += snprintf(str + n, len - n, "%02x", m);
+static void
+print_enumers(const char *prefixstr, const struct accs *accs)
+{
+	const int A = accs->accs;
+	struct enumer *enumer;
+
+	SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
+		char enumerstr[32];
+		make_enumerstr(enumerstr, sizeof(enumerstr), accs, enumer->v);
+		printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n", P, A, enumer->name, A, enumerstr);
 	}
 }
 
 static void
-print_enumers(const char *prefixstr, const struct field *field)
+make_enumerstr(char *str, const size_t len, const struct accs *accs, const int v)
 {
-	struct enumer *enumer;
+	int a;
+	int n = 0;
 
-	SIMPLEQ_FOREACH(enumer, &field->enumers, entry) {
-		printf("#define %s_ENUM_%s %d\n", P, enumer->name, enumer->v);
+	/* Print mask by 8-bit from MSB. */
+	int i;
+	uint8_t maskvec[8];
+	for (i = 0; i < accs->accs; i += 8) {
+		if (accs->shift - i > 32) {
+			maskvec[i / 8] = 0;
+		} else {
+			maskvec[i / 8] = (((unsigned)v) << (accs->shift - i)) & 0xffU;
+		}
+	}
+	print_maskvec(str, len, accs->accs, maskvec);
+}
+
+static void
+print_maskvec(char *str, const size_t len, const int A, const uint8_t *maskvec)
+{
+	int n = 0;
+	int a;
+	for (a = A - 8; a >= 0; a -= 8) {
+		assert(n < len);
+		n += snprintf(str + n, len - n, "%02x", maskvec[a / 8]);
 	}
 }
 
