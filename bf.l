@@ -179,7 +179,8 @@ nl		[\n]
 		enumer_start();
 		global->cur_enumer->v = atoi(yytext);
 	} else {
-		/* XXX error */
+		fprintf(stderr, "field has no name yet!\n");
+		exit(1);
 	}
 }
 <FIELD>{blank} {
@@ -357,7 +358,6 @@ enumer_stop(void)
 {
 	SIMPLEQ_INSERT_TAIL(&global->cur_field->enumers, global->cur_enumer, entry);
 	global->cur_enumer = NULL;
-	// XXX free'ed at field_free()
 }
 
 static struct prefix *
@@ -497,6 +497,7 @@ print_field(const struct field *field)
 	/* Privide all access widths >A. */
 	int a;
 	for (a = A; a <= 64; a <<= 1) {
+		/* Follow explicit access sizes when specified. */
 		if (global->access != 0 && (global->access & a) == 0)
 			continue;
 		accs->accs = a;
