@@ -66,6 +66,7 @@ static void enumer_start(void);
 static void enumer_stop(void);
 
 struct global {
+	int access;
 	int verbose;
 	int full;
 	struct prefixes prefixes;
@@ -245,9 +246,26 @@ static void
 setup(int argc, char *argv[])
 {
 	int c;
+	extern char *optarg;
 
-	while ((c = getopt(argc, argv, "fv")) != -1) {
+	while ((c = getopt(argc, argv, "a:fv")) != -1) {
+		int a;
 		switch (c) {
+		case 'a':
+			a = atoi(optarg);
+			switch (a) {
+			case 8:
+			case 16:
+			case 32:
+			case 64:
+				global->access |= a;
+				break;
+			default:
+				fprintf(stderr, "invalid access size (%d)\n", a);
+				exit(1);
+				/* NOTREACHED */
+			}
+			break;
 		case 'f':
 			global->full = 1;
 			break;
@@ -479,6 +497,8 @@ print_field(const struct field *field)
 	/* Privide all access widths >A. */
 	int a;
 	for (a = A; a <= 64; a <<= 1) {
+		if (global->access != 0 && (global->access & a) == 0)
+			continue;
 		accs->accs = a;
 		accs->index = accs->S / accs->accs;
 		calc_access_shift(accs);
