@@ -23,10 +23,6 @@
 #include <stdlib.h>
 #include "queue.h"
 
-#ifndef nitems
-#define nitems(x)	(sizeof(x) / sizeof(x[0]))
-#endif
-
 struct prefix;
 struct field;
 struct enumer;
@@ -54,8 +50,8 @@ struct enumer {
 	int v;
 };
 enum endian {
-	LITTLE = 0,
-	BIG = 1,
+	LITTLE = 1,
+	BIG = 2,
 };
 
 static void prefix_start(void);
@@ -427,8 +423,6 @@ struct accs {
 	int align;
 	int accs;
 	int index;
-
-	/* Unaligned specific. */
 	int shift;
 	int S, E;
 };
