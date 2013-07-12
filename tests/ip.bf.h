@@ -2,6 +2,8 @@
 #define IP_VERSION_SWAP_32 _BfSwapBe4
 #define IP_VERSION_MASK_32 UINT32_C(0xf0000000)
 #define IP_VERSION_SHIFT_32 28
+#define IP_VERSION_ENUM_V4 4
+#define IP_VERSION_ENUM_V6 6
 
 #define IP_IHL_INDEX_32 0
 #define IP_IHL_SWAP_32 _BfSwapBe4
@@ -12,10 +14,6 @@
 #define IP_TYPE_SWAP_32 _BfSwapBe4
 #define IP_TYPE_MASK_32 UINT32_C(0x00ff0000)
 #define IP_TYPE_SHIFT_32 16
-#define IP_TYPE_ENUM_HOGE 0
-#define IP_TYPE_ENUM_FUGA 1
-#define IP_TYPE_ENUM_FOO 2
-#define IP_TYPE_ENUM_BAR 3
 
 #define IP_LEN_INDEX_32 0
 #define IP_LEN_SWAP_32 _BfSwapBe4
