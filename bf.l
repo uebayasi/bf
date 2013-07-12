@@ -37,7 +37,6 @@ struct prefix {
 	char *name;
 	int size;
 	struct fields fields;
-	struct field *cur, *prev;
 };
 struct field {
 	SIMPLEQ_ENTRY(field) entry;
@@ -59,7 +58,8 @@ struct global {
 	int verbose;
 	int full;
 	struct prefixes prefixes;
-	struct prefix *prefix;
+	struct prefix *cur_prefix;
+	struct field *cur_field, *prev_field;
 	enum endian target;
 } global_storage = {
 	.prefixes = SIMPLEQ_HEAD_INITIALIZER(global_storage.prefixes),
@@ -122,12 +122,12 @@ nl		[\n]
 <PREFIX>{blank} {
 }
 <PREFIX>{id} {
-	assert(global->prefix->name == NULL);
-	global->prefix->name = strdup(yytext);
+	assert(global->cur_prefix->name == NULL);
+	global->cur_prefix->name = strdup(yytext);
 	BEGIN INITIAL;
 }
 <PREFIX>{nl} {
-	assert(global->prefix->name == NULL);
+	assert(global->cur_prefix->name == NULL);
 	BEGIN INITIAL;
 }
 
@@ -150,14 +150,14 @@ nl		[\n]
 <SIZE>{blank} {
 }
 <SIZE>{number} {
-	assert(global->prefix->size == 0);
-	global->prefix->size = atoi(yytext);
-	assert(global->prefix->cur == NULL);
+	assert(global->cur_prefix->size == 0);
+	global->cur_prefix->size = atoi(yytext);
+	assert(global->cur_field == NULL);
 	BEGIN INITIAL;
 }
 
 <FIELD>{id} {
-	global->prefix->cur->name = strdup(yytext);
+	global->cur_field->name = strdup(yytext);
 }
 <FIELD>{blank} {
 }
@@ -245,41 +245,41 @@ stop(void)
 static void
 prefix_start(void)
 {
-	assert(global->prefix == NULL);
-	global->prefix = prefix_alloc();
+	assert(global->cur_prefix == NULL);
+	global->cur_prefix = prefix_alloc();
 }
 
 static void
 prefix_stop(void)
 {
-	if (global->prefix != NULL) {
+	if (global->cur_prefix != NULL) {
 		if (global->verbose)
-			dump(global->prefix);
-		prefix_free(global->prefix);
-		global->prefix = NULL;
+			dump(global->cur_prefix);
+		prefix_free(global->cur_prefix);
+		global->cur_prefix = NULL;
 	}
-	assert(global->prefix == NULL);
+	assert(global->cur_prefix == NULL);
 }
 
 static void
 field_start(void)
 {
-	assert(global->prefix->cur == NULL);
-	global->prefix->cur = field_alloc();
-	global->prefix->cur->width = atoi(yytext);
+	assert(global->cur_field == NULL);
+	global->cur_field = field_alloc();
+	global->cur_field->width = atoi(yytext);
 }
 
 static void
 field_stop(void)
 {
-	struct field *prev = global->prefix->prev;
+	struct field *prev = global->prev_field;
 	const int offset = prev ? (prev->offset + prev->width) : 0;
 
-	assert(offset + global->prefix->cur->width <= global->prefix->size);
-	global->prefix->cur->offset = offset;
-	global->prefix->prev = global->prefix->cur;
-	field_print(global->prefix->cur);
-	global->prefix->cur = NULL;
+	assert(offset + global->cur_field->width <= global->cur_prefix->size);
+	global->cur_field->offset = offset;
+	global->prev_field = global->cur_field;
+	field_print(global->cur_field);
+	global->cur_field = NULL;
 }
 
 static struct prefix *
@@ -306,7 +306,7 @@ field_alloc(void)
 	struct field *new_field;
 
 	new_field = calloc(sizeof(*new_field), 1);
-	SIMPLEQ_INSERT_TAIL(&global->prefix->fields, new_field, entry);
+	SIMPLEQ_INSERT_TAIL(&global->cur_prefix->fields, new_field, entry);
 	return new_field;
 }
 
@@ -406,8 +406,8 @@ print_accs(const struct accs *accs)
 	char prefixstr[256];
 
 	snprintf(prefixstr, sizeof(prefixstr), "%s%s%s",
-	    global->prefix->name ? global->prefix->name : "",
-	    global->prefix->name ? "_" : "", name);
+	    global->cur_prefix->name ? global->cur_prefix->name : "",
+	    global->cur_prefix->name ? "_" : "", name);
 #define P prefixstr
 
 	printf("#define %s_INDEX_%d %d\n", P, A, accs->index);
@@ -604,13 +604,13 @@ static void
 dump(struct prefix *prefix)
 {
 	struct layout *layout = dump_layout_alloc();
-	char *name = global->prefix->name;
+	char *name = global->cur_prefix->name;
 
 	putchar('\n');
 	printf("/*\n");
 	printf(" * %s%s(prefix=%s size=%d target=%d)\n",
 	    name ? name : "", name ? " " : "",
-	    name, global->prefix->size, global->target);
+	    name, global->cur_prefix->size, global->target);
 	printf(" *\n");
 	printf(" * real memory layout:\n");
 	dump_fields_addresses(layout, 0);
@@ -638,14 +638,14 @@ dump_layout_alloc(void)
 	struct layout *layout;
 
 	layout = calloc(sizeof(*layout), 1);
-	layout->size = (global->prefix->size + 64) & ~(64 - 1);
+	layout->size = (global->cur_prefix->size + 64) & ~(64 - 1);
 	layout->buf = malloc(layout->size);
 	memset(layout->buf, '.', layout->size);
 
 	struct field *field;
 	char C = 'a';
 	int i = 0;
-	SIMPLEQ_FOREACH(field, &global->prefix->fields, entry) {
+	SIMPLEQ_FOREACH(field, &global->cur_prefix->fields, entry) {
 		int j;
 		for (j = 0; j < field->width; j++) {
 			const int x = global->target == BIG ?
@@ -675,7 +675,7 @@ dump_fields_addresses(struct layout *layout, int swap)
 	int i;
 
 	printf(" * ");
-	for (i = 0; i < global->prefix->size; i += NBBY) {
+	for (i = 0; i < global->cur_prefix->size; i += NBBY) {
 		if (i > 0 && i % NBBY == 0)
 			putchar(' ');
 		if (swap == 0) {
@@ -696,7 +696,7 @@ dump_fields_bits(struct layout *layout, int swap)
 	int i;
 
 	printf(" * ");
-	for (i = 0; i < global->prefix->size; i += NBBY) {
+	for (i = 0; i < global->cur_prefix->size; i += NBBY) {
 		int index, incr;
 		index = bits_index(i, swap, &incr);
 		const char *p = layout->buf + index;
@@ -717,7 +717,7 @@ dump_fields_legend(void)
 	char C = 'a';
 
 	printf(" * ");
-	SIMPLEQ_FOREACH(field, &global->prefix->fields, entry) {
+	SIMPLEQ_FOREACH(field, &global->cur_prefix->fields, entry) {
 		char * const name =
 		    (field->name != NULL) ? field->name : "(unused)";
 		printf("%s%c:%d:%s",
