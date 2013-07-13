@@ -455,8 +455,6 @@ struct accs {
 	const struct field *field;
 	enum endian target;
 	int align;
-	int accs;
-	int index;
 	int shift;
 	struct asv asv;
 };
@@ -535,14 +533,10 @@ print_field(const struct field *field)
 		/* Follow explicit access sizes when specified. */
 		if (global->access != 0 && (global->access & a) == 0)
 			continue;
-		accs->accs = a;
-		accs->index = O / accs->accs;
-		accs->shift = calc_access_shift(accs);
-#if 1
 		accs->asv.asiz = a;
-		accs->asv.index = O / accs->accs;
+		accs->asv.index = O / a;
+		accs->shift = calc_access_shift(accs);
 		accs->asv.sv.shift = calc_access_shift(accs);
-#endif
 		print_accs(prefixstr, accs);
 		print_enumers(prefixstr, accs);
 	}
@@ -552,10 +546,10 @@ print_field(const struct field *field)
 static void
 print_accs(const char *prefixstr, const struct accs *accs)
 {
-	const int A = accs->accs;
+	const int A = accs->asv.asiz;
 #define P prefixstr
 
-	printf("#define %s_INDEX_%d %d\n", P, A, accs->index);
+	printf("#define %s_INDEX_%d %d\n", P, A, accs->asv.index);
 
 	if (global->full) {
 		printf("#define %s_OCV_%d(p) "
@@ -584,7 +578,7 @@ print_accs(const char *prefixstr, const struct accs *accs)
 	static char clearstr[256];
 	static char setstr[256];
 	static char writestr[256];
-	if (accs->accs == accs->align) {
+	if (accs->asv.asiz == accs->align) {
 		if (global->full) {
 			snprintf(readstr, sizeof(readstr),
 			    "%s_CV_%d(p)", P, A);
@@ -651,7 +645,7 @@ print_accs(const char *prefixstr, const struct accs *accs)
 static void
 print_enumers(const char *prefixstr, const struct accs *accs)
 {
-	const int A = accs->accs;
+	const int A = accs->asv.asiz;
 	struct enumer *enumer;
 
 	SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
@@ -708,13 +702,13 @@ calc_access_size(const struct accs *accs)
 static int
 calc_access_shift(const struct accs *accs)
 {
-	const int A = accs->accs;
+	const int A = accs->asv.asiz;
 	const struct mask *mask = &accs->asv.sv.u.mask;
 
 	/* Shift in register. */
 	return
 	    /* Aligned access - no shift needed. */
-	    (accs->accs == accs->align) ? 0 :
+	    (accs->asv.asiz == accs->align) ? 0 :
 	    /* Unaligned access. */
 	    (accs->target == BIG) ?
 		/*
@@ -734,7 +728,7 @@ make_maskstr(char *str, const size_t len, const struct accs *accs)
 {
 	struct asv Vec_storage, *Vec = &Vec_storage;
 	mask2vec(&accs->asv, Vec);
-	print_maskvec(str, len, accs->accs, &Vec->sv.u.vec);
+	print_maskvec(str, len, accs->asv.asiz, &Vec->sv.u.vec);
 }
 
 static void
@@ -747,7 +741,7 @@ make_enumerstr(char *str, const size_t len, const struct accs *accs,
 
 	struct asv vec_storage, *vec = &vec_storage;
 	v2vec(sv, vec);
-	print_maskvec(str, len, accs->accs, &vec->sv.u.vec);
+	print_maskvec(str, len, accs->asv.asiz, &vec->sv.u.vec);
 }
 
 static void
