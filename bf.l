@@ -458,11 +458,16 @@ struct accs {
 	enum endian target;
 	int align;
 	int minasiz;
+	struct asv asvs[4];
 };
 
-static void print_accs(const char *, struct accs *);
+/* 8/16/32/64 -> 0/1/2/3 */
+#define a2idx(a) (((((a) >> 3) & 0xc) ? 0x2 : 0) | ((((a) >> 3) & 0x6) ? 0x1 : 0))
+
+static void analyze_accs(struct accs *);
 static int calc_access_size(const int, const struct mask *);
 static int calc_access_shift(const int, const int, const struct mask *);
+static void print_accs(const char *, struct accs *);
 static void print_mask(const char *, const struct asv *);
 static void print_enumer(const char *, const struct asv *,
     const struct enumer *);
@@ -471,16 +476,17 @@ static void print_vec(char *, const size_t, const struct asv *,
 static void mask2vec(const struct asv *, struct asv *);
 static void v2vec(const struct asv *, struct asv *);
 
-#define O	accs->field->offset
-#define W	accs->field->width
-
 static void
 field_print(const struct field *field)
 {
+	struct accs accs_storage = {
+		.field = field,
+		.target = global->target,
+	}, *accs = &accs_storage;
+	analyze_accs(accs);
+
 	const char *fmt = "/* field: name=%s offset=%d width=%d */\n";
-
 	static int once = 0;
-
 	if (field->name == NULL) {
 		/* Unused bits (pads). */
 		if (global->verbose) {
@@ -494,49 +500,38 @@ field_print(const struct field *field)
 		if (global->verbose) {
 			printf(fmt, field->name, field->offset, field->width);
 		}
-
 		const char * const name = field->name;
 		char prefixstr[256];
 		snprintf(prefixstr, sizeof(prefixstr), "%s%s%s",
 		    global->cur_prefix->name ? global->cur_prefix->name : "",
 		    global->cur_prefix->name ? "_" : "", name);
-		struct accs accs_storage = {
-			.field = field,
-			.target = global->target,
-		}, *accs = &accs_storage;
 		print_accs(prefixstr, accs);
 	}
 }
 
 static void
-print_accs(const char *prefixstr, struct accs *accs)
+analyze_accs(struct accs *accs)
 {
+	const int O = accs->field->offset;
+	const int W = accs->field->width;
+	const struct mask mask = { O, O + W };
+
 	/*
 	 * Calc alignment by checking the right most bit.
 	 * Ignore alignment more than 64-bit (8).
 	 */
-	struct mask mask = { O, O + W };
 	accs->align = MIN(MIN(_BfAlign(mask.S), _BfAlign(mask.E)), 8) << 3;
 
 	/* Minimal register access width == alignment size. */
 	accs->minasiz = calc_access_size(accs->align, &mask);
 
-	/* Provide all access widths >A. */
 	int a;
 	for (a = accs->minasiz; a <= 64; a <<= 1) {
-		/* Follow explicit access sizes when specified. */
-		if (global->access != 0 && (global->access & a) == 0)
-			continue;
-		struct asv asv_storage, *asv = &asv_storage;
+		struct asv *asv = &accs->asvs[a2idx(a)];
 		asv->asiz = a;
 		asv->index = O / a;
 		asv->sv.shift = calc_access_shift(accs->align, a, &mask);
 		asv->sv.u.mask = mask;
-		print_mask(prefixstr, asv);
-		struct enumer *enumer;
-		SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
-			print_enumer(prefixstr, asv, enumer);
-		}
 	}
 }
 
@@ -601,6 +596,24 @@ calc_access_shift(const int align, const int asiz, const struct mask *mask)
 		 * Simply calc shift from left.
 		 */
 		(mask->S % asiz);
+}
+
+static void
+print_accs(const char *prefixstr, struct accs *accs)
+{
+	/* Provide all access widths >A. */
+	int a;
+	for (a = accs->minasiz; a <= 64; a <<= 1) {
+		/* Follow explicit access sizes when specified. */
+		if (global->access != 0 && (global->access & a) == 0)
+			continue;
+		struct asv *asv = &accs->asvs[a2idx(a)];
+		print_mask(prefixstr, asv);
+		struct enumer *enumer;
+		SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
+			print_enumer(prefixstr, asv, enumer);
+		}
+	}
 }
 
 /* Print accessors.  Assume the resulting code uses bf.h. */
@@ -725,16 +738,16 @@ static void
 mask2vec(const struct asv *asv, struct asv *vec)
 {
 	const struct mask *mask = &asv->sv.u.mask;
-	const int s = asv->sv.shift;
-	const int e = s + (mask->E - mask->S);
+	int s = asv->sv.shift;
+	int e = s + (mask->E - mask->S);
 	int i;
-	for (i = 0; i < asv->asiz; i += 8) {
+	for (i = 0; i < asv->asiz; i += 8, s -= 8, e -= 8) {
 		uint8_t b;
-		if (s >= i + 8 || e <= i)
+		if (s >= 8 || e <= 0)
 			b = 0;
 		else {
-			const int p = MAX(0, s - i);
-			const int q = MAX(0, e - i);
+			const int p = MAX(0, s);
+			const int q = MAX(0, e);
 			b = _BfMaskWN(1, p, q - p);
 		}
 		vec->sv.u.vec.vs[i / 8] = b;
