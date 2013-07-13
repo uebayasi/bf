@@ -23,6 +23,8 @@
 #include <stdlib.h>
 #include "queue.h"
 
+long long strtonum(const char *, long long, long long, const char **);
+
 struct prefix;
 struct field;
 struct enumer;
@@ -161,8 +163,7 @@ nl		[\n]
 }
 <SIZE>{number} {
 	assert(global->cur_prefix->size == 0);
-	// XXX strtonum
-	global->cur_prefix->size = atoi(yytext);
+	global->cur_prefix->size = strtonum(yytext, 0, 1 << 30, NULL);
 	assert(global->cur_field == NULL);
 	BEGIN INITIAL;
 }
@@ -174,8 +175,7 @@ nl		[\n]
 	if (global->cur_field->name != NULL) {
 		BEGIN FIELD_ENUM;
 		enumer_start();
-		// XXX strtonum
-		global->cur_enumer->v = atoi(yytext);
+		global->cur_enumer->v = strtonum(yytext, 0, 1 << 30, NULL);
 	} else {
 		fprintf(stderr, "field has no name yet!\n");
 		exit(1);
@@ -260,7 +260,8 @@ setup(int argc, char *argv[])
 				global->access |= a;
 				break;
 			default:
-				fprintf(stderr, "invalid access size (%d)\n", a);
+				fprintf(stderr, "invalid access size (%d)\n",
+				    a);
 				exit(1);
 				/* NOTREACHED */
 			}
@@ -757,17 +758,15 @@ v2vec(const struct asv *asv, struct asv *vec)
 
 static void
 print_maskvec(char *str, const size_t len, const struct asv *asv,
-    void (*conv)(const struct asv *, struct asv *))
+    void (*x2vec)(const struct asv *, struct asv *))
 {
 	struct asv vec_storage, *vec = &vec_storage;
-	(*conv)(asv, vec);
-
-	const int A = asv->asiz;
+	(*x2vec)(asv, vec);
 
 	/* Print mask by 8-bit from MSB. */
 	int n = 0;
 	int a;
-	for (a = A - 8; a >= 0; a -= 8) {
+	for (a = asv->asiz - 8; a >= 0; a -= 8) {
 		assert(n < len);
 		n += snprintf(str + n, len - n, "%02x",
 		    vec->sv.u.vec.vs[a / 8]);
