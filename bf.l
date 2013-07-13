@@ -457,16 +457,15 @@ struct accs {
 	const struct field *field;
 	enum endian target;
 	int align;
-	struct asv asv;
 };
 
-static void print_field(const struct field *);
-static int calc_access_size(const struct accs *);
-static int calc_access_shift(const struct accs *);
-static void print_accs(const char *, const struct asv *);
+static void print_accs(const struct field *);
+static int calc_access_size(const int, const struct mask *);
+static int calc_access_shift(const int, const struct asv *);
+static void print_mask(const char *, const struct asv *);
 static void print_enumer(const char *, const struct asv *,
     const struct enumer *);
-static void print_maskvec(char *, const size_t, const struct asv *,
+static void print_vec(char *, const size_t, const struct asv *,
     void (*)(const struct asv *, struct asv *));
 static void mask2vec(const struct asv *, struct asv *);
 static void v2vec(const struct asv *, struct asv *);
@@ -494,32 +493,33 @@ field_print(const struct field *field)
 		if (global->verbose) {
 			printf(fmt, field->name, field->offset, field->width);
 		}
-		print_field(field);
+		struct accs accs_storage = {
+			.field = field,
+			.target = global->target,
+		}, *accs = &accs_storage;
+		print_accs(accs);
 	}
 }
 
 static void
-print_field(const struct field *field)
+print_accs(const struct accs *accs)
 {
-	struct accs accs_storage = {
-		.field = field,
-		.target = global->target,
-	}, *accs = &accs_storage;
+	struct asv asv_storage, *asv = &asv_storage;
 
 	/*
 	 * Calc alignment by checking the right most bit.
 	 * Ignore alignment more than 64-bit (8).
 	 */
-	const int S = O;
-	const int E = O + W;
-	const int align = MIN(MIN(_BfAlign(S), _BfAlign(E)), 8) << 3;
+	struct mask *mask = &asv->sv.u.mask;
+	mask->S = O;
+	mask->E = O + W;
+	const int align =
+	    MIN(MIN(_BfAlign(mask->S), _BfAlign(mask->E)), 8) << 3;
 
 	accs->align = align;
-	accs->asv.sv.u.mask.S = S;
-	accs->asv.sv.u.mask.E = E;
 
 	/* Minimal register access width == alignment size. */
-	const int A = calc_access_size(accs);
+	const int A = calc_access_size(accs->align, mask);
 
 	const char * const name = accs->field->name;
 	char prefixstr[256];
@@ -533,22 +533,22 @@ print_field(const struct field *field)
 		/* Follow explicit access sizes when specified. */
 		if (global->access != 0 && (global->access & a) == 0)
 			continue;
-		accs->asv.asiz = a;
-		accs->asv.index = O / a;
-		accs->asv.sv.shift = calc_access_shift(accs);
-		print_accs(prefixstr, &accs->asv);
+		asv->asiz = a;
+		asv->index = O / a;
+		asv->sv.shift = calc_access_shift(align, asv);
+		print_mask(prefixstr, asv);
 		struct enumer *enumer;
 		SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
-			print_enumer(prefixstr, &accs->asv, enumer);
+			print_enumer(prefixstr, asv, enumer);
 		}
 	}
 }
 
 static int
-calc_access_size(const struct accs *accs)
+calc_access_size(const int align, const struct mask *mask)
 {
-	if (accs->align > 0) {
-		return accs->align;
+	if (align > 0) {
+		return align;
 	} else {
 		/*
 		 * Determine the (minimal) access size.
@@ -561,7 +561,6 @@ calc_access_size(const struct accs *accs)
 		 */
 
 		/* 8-bit indexes. */
-		const struct mask *mask = &accs->asv.sv.u.mask;
 		int i = mask->S / NBBY;
 		int j = (mask->E - 1) / NBBY;
 
@@ -588,17 +587,17 @@ calc_access_size(const struct accs *accs)
 }
 
 static int
-calc_access_shift(const struct accs *accs)
+calc_access_shift(const int align, const struct asv *asv)
 {
-	const int A = accs->asv.asiz;
-	const struct mask *mask = &accs->asv.sv.u.mask;
+	const int A = asv->asiz;
+	const struct mask *mask = &asv->sv.u.mask;
 
 	/* Shift in register. */
 	return
 	    /* Aligned access - no shift needed. */
-	    (accs->asv.asiz == accs->align) ? 0 :
+	    (asv->asiz == align) ? 0 :
 	    /* Unaligned access. */
-	    (accs->target == BIG) ?
+	    (global->target == BIG) ?
 		/*
 		 * Big endian .bf definition is in real memory, not view.
 		 * Calc shift from right.
@@ -613,7 +612,7 @@ calc_access_shift(const struct accs *accs)
 
 /* Print accessors.  Assume the resulting code uses bf.h. */
 static void
-print_accs(const char *prefixstr, const struct asv *asv)
+print_mask(const char *prefixstr, const struct asv *asv)
 {
 	const int A = asv->asiz;
 #define P prefixstr
@@ -666,7 +665,7 @@ print_accs(const char *prefixstr, const struct asv *asv)
 		}
 	} else {
 		char maskstr[32];
-		print_maskvec(maskstr, sizeof(maskstr), asv, mask2vec);
+		print_vec(maskstr, sizeof(maskstr), asv, mask2vec);
 
 		const struct mask *mask = &asv->sv.u.mask;
 		printf("#define %s_SHIFT_%d %d\n",
@@ -723,7 +722,7 @@ print_enumer(const char *prefixstr, const struct asv *asv,
 	v->sv.u.v = enumer->v;
 
 	char enumerstr[32];
-	print_maskvec(enumerstr, sizeof(enumerstr), v, v2vec);
+	print_vec(enumerstr, sizeof(enumerstr), v, v2vec);
 
 	printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
 	    P, A, enumer->name, A, enumerstr);
@@ -759,7 +758,7 @@ v2vec(const struct asv *asv, struct asv *vec)
 }
 
 static void
-print_maskvec(char *str, const size_t len, const struct asv *asv,
+print_vec(char *str, const size_t len, const struct asv *asv,
     void (*x2vec)(const struct asv *, struct asv *))
 {
 	struct asv vec_storage, *vec = &vec_storage;
