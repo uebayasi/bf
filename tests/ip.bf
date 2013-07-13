@@ -5,7 +5,8 @@ endian	big
 size	160
 4	VERSION 4 V4 6 V6
 4	IHL
-8	TYPE
+6	DSCP
+2	ECN
 16	LEN
 16	ID
 1

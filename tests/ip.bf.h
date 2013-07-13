@@ -12,11 +12,17 @@
 #define IP_IHL_WIDTH_32 4
 #define IP_IHL_MASK_32 UINT32_C(0x0f000000)
 
-#define IP_TYPE_INDEX_32 0
-#define IP_TYPE_SWAP_32 _BfSwapBe4
-#define IP_TYPE_SHIFT_32 16
-#define IP_TYPE_WIDTH_32 8
-#define IP_TYPE_MASK_32 UINT32_C(0x00ff0000)
+#define IP_DSCP_INDEX_32 0
+#define IP_DSCP_SWAP_32 _BfSwapBe4
+#define IP_DSCP_SHIFT_32 18
+#define IP_DSCP_WIDTH_32 6
+#define IP_DSCP_MASK_32 UINT32_C(0x00fc0000)
+
+#define IP_ECN_INDEX_32 0
+#define IP_ECN_SWAP_32 _BfSwapBe4
+#define IP_ECN_SHIFT_32 16
+#define IP_ECN_WIDTH_32 2
+#define IP_ECN_MASK_32 UINT32_C(0x00030000)
 
 #define IP_LEN_INDEX_32 0
 #define IP_LEN_SWAP_32 _BfSwapBe4
