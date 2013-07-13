@@ -459,9 +459,9 @@ struct accs {
 	int align;
 };
 
-static void print_accs(const struct field *);
+static void print_accs(const char *, struct accs *);
 static int calc_access_size(const int, const struct mask *);
-static int calc_access_shift(const int, const struct asv *);
+static int calc_access_shift(const int, const int, const struct mask *);
 static void print_mask(const char *, const struct asv *);
 static void print_enumer(const char *, const struct asv *,
     const struct enumer *);
@@ -493,39 +493,32 @@ field_print(const struct field *field)
 		if (global->verbose) {
 			printf(fmt, field->name, field->offset, field->width);
 		}
+
+		const char * const name = field->name;
+		char prefixstr[256];
+		snprintf(prefixstr, sizeof(prefixstr), "%s%s%s",
+		    global->cur_prefix->name ? global->cur_prefix->name : "",
+		    global->cur_prefix->name ? "_" : "", name);
 		struct accs accs_storage = {
 			.field = field,
 			.target = global->target,
 		}, *accs = &accs_storage;
-		print_accs(accs);
+		print_accs(prefixstr, accs);
 	}
 }
 
 static void
-print_accs(const struct accs *accs)
+print_accs(const char *prefixstr, struct accs *accs)
 {
-	struct asv asv_storage, *asv = &asv_storage;
-
 	/*
 	 * Calc alignment by checking the right most bit.
 	 * Ignore alignment more than 64-bit (8).
 	 */
-	struct mask *mask = &asv->sv.u.mask;
-	mask->S = O;
-	mask->E = O + W;
-	const int align =
-	    MIN(MIN(_BfAlign(mask->S), _BfAlign(mask->E)), 8) << 3;
-
-	accs->align = align;
+	struct mask mask = { O, O + W };
+	accs->align = MIN(MIN(_BfAlign(mask.S), _BfAlign(mask.E)), 8) << 3;
 
 	/* Minimal register access width == alignment size. */
-	const int A = calc_access_size(accs->align, mask);
-
-	const char * const name = accs->field->name;
-	char prefixstr[256];
-	snprintf(prefixstr, sizeof(prefixstr), "%s%s%s",
-	    global->cur_prefix->name ? global->cur_prefix->name : "",
-	    global->cur_prefix->name ? "_" : "", name);
+	const int A = calc_access_size(accs->align, &mask);
 
 	/* Provide all access widths >A. */
 	int a;
@@ -533,9 +526,11 @@ print_accs(const struct accs *accs)
 		/* Follow explicit access sizes when specified. */
 		if (global->access != 0 && (global->access & a) == 0)
 			continue;
+		struct asv asv_storage, *asv = &asv_storage;
 		asv->asiz = a;
 		asv->index = O / a;
-		asv->sv.shift = calc_access_shift(align, asv);
+		asv->sv.shift = calc_access_shift(accs->align, a, &mask);
+		asv->sv.u.mask = mask;
 		print_mask(prefixstr, asv);
 		struct enumer *enumer;
 		SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
@@ -587,27 +582,24 @@ calc_access_size(const int align, const struct mask *mask)
 }
 
 static int
-calc_access_shift(const int align, const struct asv *asv)
+calc_access_shift(const int align, const int asiz, const struct mask *mask)
 {
-	const int A = asv->asiz;
-	const struct mask *mask = &asv->sv.u.mask;
-
 	/* Shift in register. */
 	return
 	    /* Aligned access - no shift needed. */
-	    (asv->asiz == align) ? 0 :
+	    (asiz == align) ? 0 :
 	    /* Unaligned access. */
 	    (global->target == BIG) ?
 		/*
 		 * Big endian .bf definition is in real memory, not view.
 		 * Calc shift from right.
 		 */
-		((mask->E % A) == 0 ? 0 : (A - (mask->E % A))) :
+		((mask->E % asiz) == 0 ? 0 : (asiz - (mask->E % asiz))) :
 		/*
 		 * Little endian .bf definition is in little endian view.
 		 * Simply calc shift from left.
 		 */
-		(mask->S % A);
+		(mask->S % asiz);
 }
 
 /* Print accessors.  Assume the resulting code uses bf.h. */
