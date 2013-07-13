@@ -652,6 +652,20 @@ print_accs(const char *prefixstr, const struct accs *accs)
 	}
 }
 
+static void
+print_enumers(const char *prefixstr, const struct accs *accs)
+{
+	const int A = accs->accs;
+	struct enumer *enumer;
+
+	SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
+		char enumerstr[32];
+		make_enumerstr(enumerstr, sizeof(enumerstr), accs, enumer->v);
+		printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
+		    P, A, enumer->name, A, enumerstr);
+	}
+}
+
 static int
 calc_access_size(const struct accs *accs)
 {
@@ -720,73 +734,22 @@ calc_access_shift(const struct accs *accs)
 static void
 make_maskstr(char *str, const size_t len, const struct accs *accs)
 {
-	const int s = accs->shift;
-	const int e = s + (accs->E - accs->S);
-
-	struct asv mask_storage = {
-		.asiz = accs->accs,
-		.index = accs->index,
-		.sv = {
-			.shift = accs->shift,
-			.u = {
-				.mask = {
-					.S = accs->S,
-					.E = accs->E,
-				},
-			},
-		},
-	}, *mask = &mask_storage;
 	struct asv Vec_storage, *Vec = &Vec_storage;
-
-	mask2vec(mask, Vec);
+	mask2vec(&accs->asv, Vec);
 	print_maskvec(str, len, accs->accs, &Vec->sv.u.vec);
-}
-
-static void
-print_enumers(const char *prefixstr, const struct accs *accs)
-{
-	const int A = accs->accs;
-	struct enumer *enumer;
-
-	SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
-		char enumerstr[32];
-		make_enumerstr(enumerstr, sizeof(enumerstr), accs, enumer->v);
-		printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
-		    P, A, enumer->name, A, enumerstr);
-	}
 }
 
 static void
 make_enumerstr(char *str, const size_t len, const struct accs *accs,
     const int v)
 {
-	struct asv sv_storage = {
-		.asiz = accs->accs,
-		.index = accs->index,
-		.sv = {
-			.shift = accs->shift,
-			.u = {
-				.v = v,
-			},
-		},
-	}, *sv = &sv_storage;
+	struct asv sv_storage, *sv = &sv_storage;
+	*sv = accs->asv;
+	sv->sv.u.v = v;
+
 	struct asv vec_storage, *vec = &vec_storage;
-
 	sv2vec(sv, vec);
-
 	print_maskvec(str, len, accs->accs, &vec->sv.u.vec);
-}
-
-static void
-print_maskvec(char *str, const size_t len, const int A, const struct vec *vec)
-{
-	/* Print mask by 8-bit from MSB. */
-	int n = 0;
-	int a;
-	for (a = A - 8; a >= 0; a -= 8) {
-		assert(n < len);
-		n += snprintf(str + n, len - n, "%02x", vec->vs[a / 8]);
-	}
 }
 
 static void
@@ -832,6 +795,18 @@ sv2vec(const struct asv *sv, struct asv *vec)
 		if (range)
 			b = (shift > 0) ? (v << shift) : (v >> -shift);
 		vec->sv.u.vec.vs[i / 8] = b;
+	}
+}
+
+static void
+print_maskvec(char *str, const size_t len, const int A, const struct vec *vec)
+{
+	/* Print mask by 8-bit from MSB. */
+	int n = 0;
+	int a;
+	for (a = A - 8; a >= 0; a -= 8) {
+		assert(n < len);
+		n += snprintf(str + n, len - n, "%02x", vec->vs[a / 8]);
 	}
 }
 
