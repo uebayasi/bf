@@ -420,6 +420,37 @@ enumer_free(struct enumer *enumer)
  * Print bit-field accessors.
  */
 
+struct mask {
+	int S, E;
+};
+
+/* Value represented as byte vector. */
+struct vec {
+	uint8_t vs[8];
+};
+
+/* Value with shift. */
+struct sv {
+	int shift;
+	union {
+		/* Real value is (mask << shift). */
+		struct mask mask;
+		/* Real value is ((vec[0] | vec[(1] << 8) | ...) << shift). */
+		struct vec vec;
+		/* Real value is (v << shift). */
+		int v;
+	} u;
+};
+
+/* Value with access-size and shift. */
+struct asv {
+	/* Real value is, (v << shift + (asiz * index)). */
+	int asiz;
+	int index;
+	struct sv sv;
+};
+
+/* Access. */
 struct accs {
 	const struct field *field;
 	enum endian target;
@@ -428,11 +459,7 @@ struct accs {
 	int index;
 	int shift;
 	int S, E;
-};
-
-/* Value represented as byte vector. */
-struct vec {
-	uint8_t vs[8];
+	struct asv asv;
 };
 
 static void print_field(const struct field *);
@@ -444,6 +471,8 @@ static void print_enumers(const char *, const struct accs *);
 static void make_enumerstr(char *, const size_t, const struct accs *,
     const int);
 static void print_maskvec(char *, const size_t, const int, const struct vec *);
+static void mask2vec(const struct asv *, struct asv *);
+static void sv2vec(const struct asv *, struct asv *);
 
 #define O	accs->field->offset
 #define W	accs->field->width
@@ -491,6 +520,10 @@ print_field(const struct field *field)
 	accs->S = S;
 	accs->E = E;
 	accs->align = align;
+#if 1
+	accs->asv.sv.u.mask.S = S;
+	accs->asv.sv.u.mask.E = E;
+#endif
 
 	/* Minimal register access width == alignment size. */
 	const int A = calc_access_size(accs);
@@ -510,6 +543,11 @@ print_field(const struct field *field)
 		accs->accs = a;
 		accs->index = accs->S / accs->accs;
 		accs->shift = calc_access_shift(accs);
+#if 1
+		accs->asv.asiz = a;
+		accs->asv.index = accs->S / accs->accs;
+		accs->asv.sv.shift = calc_access_shift(accs);
+#endif
 		print_accs(prefixstr, accs);
 		print_enumers(prefixstr, accs);
 	}
@@ -574,7 +612,7 @@ print_accs(const char *prefixstr, const struct accs *accs)
 		printf("#define %s_SHIFT_%d %d\n",
 		    P, A, accs->shift);
 		printf("#define %s_WIDTH_%d %d\n",
-		    P, A, accs->field->width);
+		    P, A, accs->E - accs->S);
 		printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
 		    P, A, A, maskstr);
 		if (global->full) {
@@ -682,20 +720,26 @@ calc_access_shift(const struct accs *accs)
 static void
 make_maskstr(char *str, const size_t len, const struct accs *accs)
 {
-	int a;
-	int n = 0;
-
 	const int s = accs->shift;
 	const int e = s + (accs->E - accs->S);
 
-	int i;
-	struct vec vec;
-	for (i = 0; i < accs->accs; i += 8) {
-		const int p = MAX(0, s - i);
-		const int q = MAX(0, e - i);
-		vec.vs[i / 8] = _BfMaskWN(1, p, q - p);
-	}
-	print_maskvec(str, len, accs->accs, &vec);
+	struct asv mask_storage = {
+		.asiz = accs->accs,
+		.index = accs->index,
+		.sv = {
+			.shift = accs->shift,
+			.u = {
+				.mask = {
+					.S = accs->S,
+					.E = accs->E,
+				},
+			},
+		},
+	}, *mask = &mask_storage;
+	struct asv Vec_storage, *Vec = &Vec_storage;
+
+	mask2vec(mask, Vec);
+	print_maskvec(str, len, accs->accs, &Vec->sv.u.vec);
 }
 
 static void
@@ -716,13 +760,57 @@ static void
 make_enumerstr(char *str, const size_t len, const struct accs *accs,
     const int v)
 {
-	int a;
+	struct asv sv_storage = {
+		.asiz = accs->accs,
+		.index = accs->index,
+		.sv = {
+			.shift = accs->shift,
+			.u = {
+				.v = v,
+			},
+		},
+	}, *sv = &sv_storage;
+	struct asv vec_storage, *vec = &vec_storage;
+
+	sv2vec(sv, vec);
+
+	print_maskvec(str, len, accs->accs, &vec->sv.u.vec);
+}
+
+static void
+print_maskvec(char *str, const size_t len, const int A, const struct vec *vec)
+{
+	/* Print mask by 8-bit from MSB. */
 	int n = 0;
+	int a;
+	for (a = A - 8; a >= 0; a -= 8) {
+		assert(n < len);
+		n += snprintf(str + n, len - n, "%02x", vec->vs[a / 8]);
+	}
+}
+
+static void
+mask2vec(const struct asv *mask, struct asv *vec)
+{
+	const int s = mask->sv.shift;
+	const int e = s + (mask->sv.u.mask.E - mask->sv.u.mask.S);
 
 	int i;
-	struct vec vec;
-	for (i = 0; i < accs->accs; i += 8) {
-		const int shift = accs->shift - i;
+	for (i = 0; i < mask->asiz; i += 8) {
+		const int p = MAX(0, s - i);
+		const int q = MAX(0, e - i);
+		vec->sv.u.vec.vs[i / 8] = _BfMaskWN(1, p, q - p);
+	}
+}
+
+static void
+sv2vec(const struct asv *sv, struct asv *vec)
+{
+	const int v = sv->sv.u.v;
+
+	int i;
+	for (i = 0; i < sv->asiz; i += 8) {
+		const int shift = sv->sv.shift - i;
 		/* Check enum range. */
 		int range = 1;
 		if (shift >= 8) {
@@ -743,20 +831,7 @@ make_enumerstr(char *str, const size_t len, const struct accs *accs,
 		uint8_t b = 0;
 		if (range)
 			b = (shift > 0) ? (v << shift) : (v >> -shift);
-		vec.vs[i / 8] = b;
-	}
-	print_maskvec(str, len, accs->accs, &vec);
-}
-
-static void
-print_maskvec(char *str, const size_t len, const int A, const struct vec *vec)
-{
-	/* Print mask by 8-bit from MSB. */
-	int n = 0;
-	int a;
-	for (a = A - 8; a >= 0; a -= 8) {
-		assert(n < len);
-		n += snprintf(str + n, len - n, "%02x", vec->vs[a / 8]);
+		vec->sv.u.vec.vs[i / 8] = b;
 	}
 }
 
