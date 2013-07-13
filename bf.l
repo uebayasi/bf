@@ -442,7 +442,7 @@ struct sv {
 	} u;
 };
 
-/* Value with access-size and shift. */
+/* Value with access-size and index. */
 struct asv {
 	/* Real value is, (v << shift + (asiz * index)). */
 	int asiz;
@@ -458,7 +458,6 @@ struct accs {
 	int accs;
 	int index;
 	int shift;
-	int S, E;
 	struct asv asv;
 };
 
@@ -517,13 +516,9 @@ print_field(const struct field *field)
 	const int E = O + W;
 	const int align = MIN(MIN(_BfAlign(S), _BfAlign(E)), 8) << 3;
 
-	accs->S = S;
-	accs->E = E;
 	accs->align = align;
-#if 1
 	accs->asv.sv.u.mask.S = S;
 	accs->asv.sv.u.mask.E = E;
-#endif
 
 	/* Minimal register access width == alignment size. */
 	const int A = calc_access_size(accs);
@@ -541,11 +536,11 @@ print_field(const struct field *field)
 		if (global->access != 0 && (global->access & a) == 0)
 			continue;
 		accs->accs = a;
-		accs->index = accs->S / accs->accs;
+		accs->index = O / accs->accs;
 		accs->shift = calc_access_shift(accs);
 #if 1
 		accs->asv.asiz = a;
-		accs->asv.index = accs->S / accs->accs;
+		accs->asv.index = O / accs->accs;
 		accs->asv.sv.shift = calc_access_shift(accs);
 #endif
 		print_accs(prefixstr, accs);
@@ -607,12 +602,13 @@ print_accs(const char *prefixstr, const struct accs *accs)
 			    P, A);
 		}
 	} else {
+		const struct mask *mask = &accs->asv.sv.u.mask;
 		char maskstr[32];
 		make_maskstr(maskstr, sizeof(maskstr), accs);
 		printf("#define %s_SHIFT_%d %d\n",
 		    P, A, accs->shift);
 		printf("#define %s_WIDTH_%d %d\n",
-		    P, A, accs->E - accs->S);
+		    P, A, mask->E - mask->S);
 		printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
 		    P, A, A, maskstr);
 		if (global->full) {
@@ -683,8 +679,9 @@ calc_access_size(const struct accs *accs)
 		 */
 
 		/* 8-bit indexes. */
-		int i = accs->S / NBBY;
-		int j = (accs->E - 1) / NBBY;
+		const struct mask *mask = &accs->asv.sv.u.mask;
+		int i = mask->S / NBBY;
+		int j = (mask->E - 1) / NBBY;
 
 		int a = 1;
 
@@ -712,6 +709,7 @@ static int
 calc_access_shift(const struct accs *accs)
 {
 	const int A = accs->accs;
+	const struct mask *mask = &accs->asv.sv.u.mask;
 
 	/* Shift in register. */
 	return
@@ -723,12 +721,12 @@ calc_access_shift(const struct accs *accs)
 		 * Big endian .bf definition is in real memory, not view.
 		 * Calc shift from right.
 		 */
-		((accs->E % A) == 0 ? 0 : (A - (accs->E % A))) :
+		((mask->E % A) == 0 ? 0 : (A - (mask->E % A))) :
 		/*
 		 * Little endian .bf definition is in little endian view.
 		 * Simply calc shift from left.
 		 */
-		(accs->S % A);
+		(mask->S % A);
 }
 
 static void
@@ -753,13 +751,13 @@ make_enumerstr(char *str, const size_t len, const struct accs *accs,
 }
 
 static void
-mask2vec(const struct asv *mask, struct asv *vec)
+mask2vec(const struct asv *asv, struct asv *vec)
 {
-	const int s = mask->sv.shift;
-	const int e = s + (mask->sv.u.mask.E - mask->sv.u.mask.S);
-
+	const struct mask *mask = &asv->sv.u.mask;
+	const int s = asv->sv.shift;
+	const int e = s + (mask->E - mask->S);
 	int i;
-	for (i = 0; i < mask->asiz; i += 8) {
+	for (i = 0; i < asv->asiz; i += 8) {
 		const int p = MAX(0, s - i);
 		const int q = MAX(0, e - i);
 		vec->sv.u.vec.vs[i / 8] = _BfMaskWN(1, p, q - p);
@@ -767,17 +765,17 @@ mask2vec(const struct asv *mask, struct asv *vec)
 }
 
 static void
-v2vec(const struct asv *v, struct asv *vec)
+v2vec(const struct asv *asv, struct asv *vec)
 {
+	const int v = asv->sv.u.v;
 	int i;
-	for (i = 0; i < v->asiz; i += 8) {
-		const int shift = v->sv.shift - i;
+	for (i = 0; i < asv->asiz; i += 8) {
+		const int shift = asv->sv.shift - i;
 		if (shift > 8 || shift < -31)
 			vec->sv.u.vec.vs[i / 8] = 0;
 		else
 			vec->sv.u.vec.vs[i / 8] = (shift > 0) ?
-			    (v->sv.u.v << shift) :
-			    (v->sv.u.v >> -shift);
+			    (v << shift) : (v >> -shift);
 	}
 }
 
