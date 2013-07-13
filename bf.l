@@ -375,6 +375,7 @@ static void
 prefix_free(struct prefix *prefix)
 {
 	struct field *field;
+
 	while ((field = SIMPLEQ_FIRST(&prefix->fields)) != NULL) {
 		SIMPLEQ_REMOVE(&prefix->fields, field, field, entry);
 		field_free(field);
@@ -471,6 +472,7 @@ struct accs {
     (((((a) >> 3) & 0xc) ? 0x2 : 0) | ((((a) >> 3) & 0x6) ? 0x1 : 0))
 
 static void analyze_accs(struct accs *);
+static int calc_access_align(const struct mask *);
 static int calc_access_size(const int, const struct mask *);
 static int calc_access_shift(const int, const int, const struct mask *);
 static void print_accs(const char *, struct accs *);
@@ -522,11 +524,8 @@ analyze_accs(struct accs *accs)
 	const int W = accs->field->width;
 	const struct mask mask = { O, O + W };
 
-	/*
-	 * Calc alignment by checking the right most bit.
-	 * Ignore alignment more than 64-bit (8).
-	 */
-	accs->align = MIN(MIN(_BfAlign(mask.S), _BfAlign(mask.E)), 8) << 3;
+	/* Check alignment.  Aligned access is simpler (only byte-swaps). */
+	accs->align = calc_access_align(&mask);
 
 	/* Minimal register access width == alignment size. */
 	accs->minasiz = calc_access_size(accs->align, &mask);
@@ -539,6 +538,16 @@ analyze_accs(struct accs *accs)
 		asv->sv.shift = calc_access_shift(accs->align, a, &mask);
 		asv->sv.u.mask = mask;
 	}
+}
+
+static int
+calc_access_align(const struct mask *mask)
+{
+	/*
+	 * Calc alignment by checking the right most bit.
+	 * Ignore alignment more than 64-bit.
+	 */
+	return MIN(MIN(_BfAlign(mask->S), _BfAlign(mask->E)) << 3, 64);
 }
 
 static int
@@ -783,7 +792,7 @@ print_vec(char *str, const size_t len, const struct asv *asv,
 	struct asv vec_storage, *vec = &vec_storage;
 	(*x2vec)(asv, vec);
 
-	/* Print mask by 8-bit from MSB. */
+	/* Print mask as hex string by 8-bit from MSB. */
 	int n = 0;
 	int a;
 	for (a = asv->asiz - 8; a >= 0; a -= 8) {
@@ -860,7 +869,19 @@ dump_layout_alloc(void)
 			const int x = global->target == BIG ?
 			    /* Big endian layout index - simple. */
 			    i :
-			    /* Little endian layout index - insane. */
+			    /*
+			     * Little endian layout index - insane.
+			     *
+			     * Little endian HWs put bit
+			     * 0..7 8..15 16..23 24..31
+			     * as
+			     * 7..0 15..8 23..16 31..24
+			     * in real memory.
+			     *
+			     * Little endian bf(1) bitfield definition 
+			     * is written in little endian "view".  Thus
+			     * real memory layout has to be 8-bit swapped.
+			     */
 			    (i - (i % NBBY) + (NBBY - (i % NBBY) - 1));
 			layout->buf[x] = C;
 			i++;
