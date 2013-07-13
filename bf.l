@@ -463,8 +463,9 @@ struct accs {
 static void print_field(const struct field *);
 static int calc_access_size(const struct accs *);
 static int calc_access_shift(const struct accs *);
-static void print_accs(const char *, const struct accs *);
-static void print_enumers(const char *, const struct accs *);
+static void print_accs(const char *, const struct asv *);
+static void print_enumer(const char *, const struct asv *,
+    const struct enumer *);
 static void print_maskvec(char *, const size_t, const struct asv *,
     void (*)(const struct asv *, struct asv *));
 static void mask2vec(const struct asv *, struct asv *);
@@ -535,8 +536,11 @@ print_field(const struct field *field)
 		accs->asv.asiz = a;
 		accs->asv.index = O / a;
 		accs->asv.sv.shift = calc_access_shift(accs);
-		print_accs(prefixstr, accs);
-		print_enumers(prefixstr, accs);
+		print_accs(prefixstr, &accs->asv);
+		struct enumer *enumer;
+		SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
+			print_enumer(prefixstr, &accs->asv, enumer);
+		}
 	}
 }
 
@@ -609,12 +613,12 @@ calc_access_shift(const struct accs *accs)
 
 /* Print accessors.  Assume the resulting code uses bf.h. */
 static void
-print_accs(const char *prefixstr, const struct accs *accs)
+print_accs(const char *prefixstr, const struct asv *asv)
 {
-	const int A = accs->asv.asiz;
+	const int A = asv->asiz;
 #define P prefixstr
 
-	printf("#define %s_INDEX_%d %d\n", P, A, accs->asv.index);
+	printf("#define %s_INDEX_%d %d\n", P, A, asv->index);
 
 	if (global->full) {
 		printf("#define %s_OCV_%d(p) "
@@ -643,7 +647,7 @@ print_accs(const char *prefixstr, const struct accs *accs)
 	static char clearstr[256];
 	static char setstr[256];
 	static char writestr[256];
-	if (accs->asv.asiz == accs->align) {
+	if (asv->sv.shift == 0) {
 		if (global->full) {
 			snprintf(readstr, sizeof(readstr),
 			    "%s_CV_%d(p)", P, A);
@@ -662,11 +666,11 @@ print_accs(const char *prefixstr, const struct accs *accs)
 		}
 	} else {
 		char maskstr[32];
-		print_maskvec(maskstr, sizeof(maskstr), &accs->asv, mask2vec);
+		print_maskvec(maskstr, sizeof(maskstr), asv, mask2vec);
 
-		const struct mask *mask = &accs->asv.sv.u.mask;
+		const struct mask *mask = &asv->sv.u.mask;
 		printf("#define %s_SHIFT_%d %d\n",
-		    P, A, accs->asv.sv.shift);
+		    P, A, asv->sv.shift);
 		printf("#define %s_WIDTH_%d %d\n",
 		    P, A, mask->E - mask->S);
 		printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
@@ -709,22 +713,20 @@ print_accs(const char *prefixstr, const struct accs *accs)
 }
 
 static void
-print_enumers(const char *prefixstr, const struct accs *accs)
+print_enumer(const char *prefixstr, const struct asv *asv,
+    const struct enumer *enumer)
 {
-	const int A = accs->asv.asiz;
-	struct enumer *enumer;
+	const int A = asv->asiz;
 
-	SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
-		struct asv v_storage, *v = &v_storage;
-		*v = accs->asv;
-		v->sv.u.v = enumer->v;
+	struct asv v_storage, *v = &v_storage;
+	*v = *asv;
+	v->sv.u.v = enumer->v;
 
-		char enumerstr[32];
-		print_maskvec(enumerstr, sizeof(enumerstr), v, v2vec);
+	char enumerstr[32];
+	print_maskvec(enumerstr, sizeof(enumerstr), v, v2vec);
 
-		printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
-		    P, A, enumer->name, A, enumerstr);
-	}
+	printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
+	    P, A, enumer->name, A, enumerstr);
 }
 
 static void
