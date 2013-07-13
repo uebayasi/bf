@@ -460,13 +460,12 @@ struct accs {
 };
 
 static void print_field(const struct field *);
-static void print_accs(const char *, const struct accs *);
 static int calc_access_size(const struct accs *);
 static int calc_access_shift(const struct accs *);
-static void make_maskstr(char *, size_t, const struct asv *);
+static void print_accs(const char *, const struct accs *);
 static void print_enumers(const char *, const struct accs *);
-static void make_enumerstr(char *, const size_t, const struct asv *);
-static void print_maskvec(char *, const size_t, const int, const struct vec *);
+static void print_maskvec(char *, const size_t, const struct asv *,
+    void (*)(const struct asv *, struct asv *));
 static void mask2vec(const struct asv *, struct asv *);
 static void v2vec(const struct asv *, struct asv *);
 
@@ -661,9 +660,10 @@ print_accs(const char *prefixstr, const struct accs *accs)
 			    P, A);
 		}
 	} else {
-		const struct mask *mask = &accs->asv.sv.u.mask;
 		char maskstr[32];
-		make_maskstr(maskstr, sizeof(maskstr), &accs->asv);
+		print_maskvec(maskstr, sizeof(maskstr), &accs->asv, mask2vec);
+
+		const struct mask *mask = &accs->asv.sv.u.mask;
 		printf("#define %s_SHIFT_%d %d\n",
 		    P, A, accs->asv.sv.shift);
 		printf("#define %s_WIDTH_%d %d\n",
@@ -717,27 +717,13 @@ print_enumers(const char *prefixstr, const struct accs *accs)
 		struct asv v_storage, *v = &v_storage;
 		*v = accs->asv;
 		v->sv.u.v = enumer->v;
+
 		char enumerstr[32];
-		make_enumerstr(enumerstr, sizeof(enumerstr), v);
+		print_maskvec(enumerstr, sizeof(enumerstr), v, v2vec);
+
 		printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
 		    P, A, enumer->name, A, enumerstr);
 	}
-}
-
-static void
-make_maskstr(char *str, const size_t len, const struct asv *mask)
-{
-	struct asv vec_storage, *vec = &vec_storage;
-	mask2vec(mask, vec);
-	print_maskvec(str, len, mask->asiz, &vec->sv.u.vec);
-}
-
-static void
-make_enumerstr(char *str, const size_t len, const struct asv *v)
-{
-	struct asv vec_storage, *vec = &vec_storage;
-	v2vec(v, vec);
-	print_maskvec(str, len, v->asiz, &vec->sv.u.vec);
 }
 
 static void
@@ -770,14 +756,21 @@ v2vec(const struct asv *asv, struct asv *vec)
 }
 
 static void
-print_maskvec(char *str, const size_t len, const int A, const struct vec *vec)
+print_maskvec(char *str, const size_t len, const struct asv *asv,
+    void (*conv)(const struct asv *, struct asv *))
 {
+	struct asv vec_storage, *vec = &vec_storage;
+	(*conv)(asv, vec);
+
+	const int A = asv->asiz;
+
 	/* Print mask by 8-bit from MSB. */
 	int n = 0;
 	int a;
 	for (a = A - 8; a >= 0; a -= 8) {
 		assert(n < len);
-		n += snprintf(str + n, len - n, "%02x", vec->vs[a / 8]);
+		n += snprintf(str + n, len - n, "%02x",
+		    vec->sv.u.vec.vs[a / 8]);
 	}
 }
 
