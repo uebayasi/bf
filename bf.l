@@ -725,11 +725,11 @@ print_enumers(const char *prefixstr, const struct accs *accs)
 }
 
 static void
-make_maskstr(char *str, const size_t len, const struct asv *asv)
+make_maskstr(char *str, const size_t len, const struct asv *mask)
 {
-	struct asv Vec_storage, *Vec = &Vec_storage;
-	mask2vec(asv, Vec);
-	print_maskvec(str, len, asv->asiz, &Vec->sv.u.vec);
+	struct asv vec_storage, *vec = &vec_storage;
+	mask2vec(mask, vec);
+	print_maskvec(str, len, mask->asiz, &vec->sv.u.vec);
 }
 
 static void
