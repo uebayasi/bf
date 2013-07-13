@@ -420,6 +420,7 @@ enumer_free(struct enumer *enumer)
  * Print bit-field accessors.
  */
 
+/* Contiguous mask bits between S-th bit and E-th bit. */
 struct mask {
 	int S, E;
 };
@@ -435,10 +436,10 @@ struct sv {
 	union {
 		/* Real value is (mask << shift). */
 		struct mask mask;
-		/* Real value is ((vec[0] | vec[(1] << 8) | ...) << shift). */
-		struct vec vec;
 		/* Real value is (v << shift). */
 		int v;
+		/* Real value is ((vec[0] | vec[(1] << 8) | ...) << shift). */
+		struct vec vec;
 	} u;
 };
 
@@ -464,8 +465,7 @@ static int calc_access_size(const struct accs *);
 static int calc_access_shift(const struct accs *);
 static void make_maskstr(char *, size_t, const struct asv *);
 static void print_enumers(const char *, const struct accs *);
-static void make_enumerstr(char *, const size_t, const struct asv *,
-    const int);
+static void make_enumerstr(char *, const size_t, const struct asv *);
 static void print_maskvec(char *, const size_t, const int, const struct vec *);
 static void mask2vec(const struct asv *, struct asv *);
 static void v2vec(const struct asv *, struct asv *);
@@ -714,9 +714,11 @@ print_enumers(const char *prefixstr, const struct accs *accs)
 	struct enumer *enumer;
 
 	SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
+		struct asv v_storage, *v = &v_storage;
+		*v = accs->asv;
+		v->sv.u.v = enumer->v;
 		char enumerstr[32];
-		make_enumerstr(enumerstr, sizeof(enumerstr), &accs->asv,
-		    enumer->v);
+		make_enumerstr(enumerstr, sizeof(enumerstr), v);
 		printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
 		    P, A, enumer->name, A, enumerstr);
 	}
@@ -731,16 +733,11 @@ make_maskstr(char *str, const size_t len, const struct asv *asv)
 }
 
 static void
-make_enumerstr(char *str, const size_t len, const struct asv *asv,
-    const int v)
+make_enumerstr(char *str, const size_t len, const struct asv *v)
 {
-	struct asv sv_storage, *sv = &sv_storage;
-	*sv = *asv;
-	sv->sv.u.v = v;
-
 	struct asv vec_storage, *vec = &vec_storage;
-	v2vec(sv, vec);
-	print_maskvec(str, len, asv->asiz, &vec->sv.u.vec);
+	v2vec(v, vec);
+	print_maskvec(str, len, v->asiz, &vec->sv.u.vec);
 }
 
 static void
