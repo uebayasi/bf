@@ -430,6 +430,11 @@ struct accs {
 	int S, E;
 };
 
+/* Value represented as byte vector. */
+struct vec {
+	uint8_t vs[8];
+};
+
 static void print_field(const struct field *);
 static void print_accs(const char *, const struct accs *);
 static int calc_access_size(const struct accs *);
@@ -438,7 +443,7 @@ static void make_maskstr(char *, size_t, const struct accs *);
 static void print_enumers(const char *, const struct accs *);
 static void make_enumerstr(char *, const size_t, const struct accs *,
     const int);
-static void print_maskvec(char *, const size_t, const int, const uint8_t *);
+static void print_maskvec(char *, const size_t, const int, const struct vec *);
 
 #define O	accs->field->offset
 #define W	accs->field->width
@@ -684,13 +689,13 @@ make_maskstr(char *str, const size_t len, const struct accs *accs)
 	const int e = s + (accs->E - accs->S);
 
 	int i;
-	uint8_t maskvec[8];
+	struct vec vec;
 	for (i = 0; i < accs->accs; i += 8) {
 		const int p = MAX(0, s - i);
 		const int q = MAX(0, e - i);
-		maskvec[i / 8] = _BfMaskWN(1, p, q - p);
+		vec.vs[i / 8] = _BfMaskWN(1, p, q - p);
 	}
-	print_maskvec(str, len, accs->accs, maskvec);
+	print_maskvec(str, len, accs->accs, &vec);
 }
 
 static void
@@ -714,9 +719,8 @@ make_enumerstr(char *str, const size_t len, const struct accs *accs,
 	int a;
 	int n = 0;
 
-	/* Print mask by 8-bit from MSB. */
 	int i;
-	uint8_t maskvec[8];
+	struct vec vec;
 	for (i = 0; i < accs->accs; i += 8) {
 		const int shift = accs->shift - i;
 		/* Check enum range. */
@@ -739,20 +743,20 @@ make_enumerstr(char *str, const size_t len, const struct accs *accs,
 		uint8_t b = 0;
 		if (range)
 			b = (shift > 0) ? (v << shift) : (v >> -shift);
-		maskvec[i / 8] = b;
+		vec.vs[i / 8] = b;
 	}
-	print_maskvec(str, len, accs->accs, maskvec);
+	print_maskvec(str, len, accs->accs, &vec);
 }
 
 static void
-print_maskvec(char *str, const size_t len, const int A, const uint8_t *maskvec)
+print_maskvec(char *str, const size_t len, const int A, const struct vec *vec)
 {
 	/* Print mask by 8-bit from MSB. */
 	int n = 0;
 	int a;
 	for (a = A - 8; a >= 0; a -= 8) {
 		assert(n < len);
-		n += snprintf(str + n, len - n, "%02x", maskvec[a / 8]);
+		n += snprintf(str + n, len - n, "%02x", vec->vs[a / 8]);
 	}
 }
 
