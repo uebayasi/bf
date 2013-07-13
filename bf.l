@@ -472,7 +472,7 @@ static void make_enumerstr(char *, const size_t, const struct accs *,
     const int);
 static void print_maskvec(char *, const size_t, const int, const struct vec *);
 static void mask2vec(const struct asv *, struct asv *);
-static void sv2vec(const struct asv *, struct asv *);
+static void v2vec(const struct asv *, struct asv *);
 
 #define O	accs->field->offset
 #define W	accs->field->width
@@ -748,7 +748,7 @@ make_enumerstr(char *str, const size_t len, const struct accs *accs,
 	sv->sv.u.v = v;
 
 	struct asv vec_storage, *vec = &vec_storage;
-	sv2vec(sv, vec);
+	v2vec(sv, vec);
 	print_maskvec(str, len, accs->accs, &vec->sv.u.vec);
 }
 
@@ -767,34 +767,17 @@ mask2vec(const struct asv *mask, struct asv *vec)
 }
 
 static void
-sv2vec(const struct asv *sv, struct asv *vec)
+v2vec(const struct asv *v, struct asv *vec)
 {
-	const int v = sv->sv.u.v;
-
 	int i;
-	for (i = 0; i < sv->asiz; i += 8) {
-		const int shift = sv->sv.shift - i;
-		/* Check enum range. */
-		int range = 1;
-		if (shift >= 8) {
-			range = 0;
-		} else if (shift < 8 && shift > -8) {
-			if (!(v & 0x000000ff))
-				range = 0;
-		} else if (shift < 0 && shift > -16) {
-			if (!(v & 0x0000ff00))
-				range = 0;
-		} else if (shift < -8 && shift > -24) {
-			if (!(v & 0x00ff0000))
-				range = 0;
-		} else if (shift < -16 && shift > -32) {
-			if (!(v & 0xff000000))
-				range = 0;
-		}
-		uint8_t b = 0;
-		if (range)
-			b = (shift > 0) ? (v << shift) : (v >> -shift);
-		vec->sv.u.vec.vs[i / 8] = b;
+	for (i = 0; i < v->asiz; i += 8) {
+		const int shift = v->sv.shift - i;
+		if (shift > 8 || shift < -31)
+			vec->sv.u.vec.vs[i / 8] = 0;
+		else
+			vec->sv.u.vec.vs[i / 8] = (shift > 0) ?
+			    (v->sv.u.v << shift) :
+			    (v->sv.u.v >> -shift);
 	}
 }
 
