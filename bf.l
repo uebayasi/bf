@@ -374,6 +374,11 @@ prefix_alloc(void)
 static void
 prefix_free(struct prefix *prefix)
 {
+	struct field *field;
+	while ((field = SIMPLEQ_FIRST(&prefix->fields)) != NULL) {
+		SIMPLEQ_REMOVE(&prefix->fields, field, field, entry);
+		field_free(field);
+	}
 	SIMPLEQ_REMOVE(&global->prefixes, prefix, prefix, entry);
 	free(prefix);
 }
@@ -462,7 +467,8 @@ struct accs {
 };
 
 /* 8/16/32/64 -> 0/1/2/3 */
-#define a2idx(a) (((((a) >> 3) & 0xc) ? 0x2 : 0) | ((((a) >> 3) & 0x6) ? 0x1 : 0))
+#define a2idx(a) \
+    (((((a) >> 3) & 0xc) ? 0x2 : 0) | ((((a) >> 3) & 0x6) ? 0x1 : 0))
 
 static void analyze_accs(struct accs *);
 static int calc_access_size(const int, const struct mask *);
