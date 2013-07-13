@@ -455,7 +455,6 @@ struct accs {
 	const struct field *field;
 	enum endian target;
 	int align;
-	int shift;
 	struct asv asv;
 };
 
@@ -463,9 +462,9 @@ static void print_field(const struct field *);
 static void print_accs(const char *, const struct accs *);
 static int calc_access_size(const struct accs *);
 static int calc_access_shift(const struct accs *);
-static void make_maskstr(char *, size_t, const struct accs *);
+static void make_maskstr(char *, size_t, const struct asv *);
 static void print_enumers(const char *, const struct accs *);
-static void make_enumerstr(char *, const size_t, const struct accs *,
+static void make_enumerstr(char *, const size_t, const struct asv *,
     const int);
 static void print_maskvec(char *, const size_t, const int, const struct vec *);
 static void mask2vec(const struct asv *, struct asv *);
@@ -535,124 +534,9 @@ print_field(const struct field *field)
 			continue;
 		accs->asv.asiz = a;
 		accs->asv.index = O / a;
-		accs->shift = calc_access_shift(accs);
 		accs->asv.sv.shift = calc_access_shift(accs);
 		print_accs(prefixstr, accs);
 		print_enumers(prefixstr, accs);
-	}
-}
-
-/* Print accessors.  Assume the resulting code uses bf.h. */
-static void
-print_accs(const char *prefixstr, const struct accs *accs)
-{
-	const int A = accs->asv.asiz;
-#define P prefixstr
-
-	printf("#define %s_INDEX_%d %d\n", P, A, accs->asv.index);
-
-	if (global->full) {
-		printf("#define %s_OCV_%d(p) "
-		    "(*((const uint%d_t *)(p) + %s_INDEX_%d))\n",
-		    P, A, A, P, A);
-		printf("#define %s_OV_%d(p) "
-		    "(*((uint%d_t *)(p) + %s_INDEX_%d))\n",
-		    P, A, A, P, A);
-	}
-
-	char swapstr[16];
-	snprintf(swapstr, sizeof(swapstr), "_BfSwap%s%d",
-	    (global->target == LITTLE) ? "Le" : "Be", A >> 3);
-	printf("#define %s_SWAP_%d %s\n", P, A, swapstr);
-
-	if (global->full) {
-		printf("#define %s_CV_%d(p) (%s_SWAP_%d(%s_OCV_%d(p)))\n",
-		    P, A, P, A, P, A);
-		printf("#define %s_V_%d(p, v) do "
-		    "{ %s_OV_%d(p) = %s_SWAP_%d(v); } while (0)\n",
-		    P, A, P, A, P, A);
-	}
-
-	static char readstr[256];
-	static char issetstr[256];
-	static char clearstr[256];
-	static char setstr[256];
-	static char writestr[256];
-	if (accs->asv.asiz == accs->align) {
-		if (global->full) {
-			snprintf(readstr, sizeof(readstr),
-			    "%s_CV_%d(p)", P, A);
-			snprintf(issetstr, sizeof(readstr),
-			    "(%s_CV_%d(p) != 0)", P, A);
-			snprintf(clearstr, sizeof(clearstr),
-			    "do { %s_V_%d(p, 0); } while (0)", P, A);
-			snprintf(setstr, sizeof(setstr),
-			    "do { "
-			        "%s_V_%d(p, (%s_CV_%d | ~%s_CV_%d(p))); "
-			    "} while (0)",
-			    P, A, P, A, P, A);
-			snprintf(writestr, sizeof(writestr),
-			    "do { %s_V_%d(p, v); } while (0)",
-			    P, A);
-		}
-	} else {
-		const struct mask *mask = &accs->asv.sv.u.mask;
-		char maskstr[32];
-		make_maskstr(maskstr, sizeof(maskstr), accs);
-		printf("#define %s_SHIFT_%d %d\n",
-		    P, A, accs->shift);
-		printf("#define %s_WIDTH_%d %d\n",
-		    P, A, mask->E - mask->S);
-		printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
-		    P, A, A, maskstr);
-		if (global->full) {
-			snprintf(readstr, sizeof(readstr),
-			    "((%s_CV_%d(p) & %s_MASK_%d) >> %s_SHIFT_%d)",
-			    P, A, P, A, P, A);
-			snprintf(issetstr, sizeof(issetstr),
-			    "((%s_CV_%d(p) & %s_MASK_%d) != 0)",
-			    P, A, P, A);
-			snprintf(clearstr, sizeof(clearstr),
-			    "do { "
-			        "%s_V_%d(p, (%s_CV_%d(p) & ~%s_MASK_%d)); "
-			    "} while (0)",
-			    P, A, P, A, P, A);
-			snprintf(setstr, sizeof(setstr),
-			    "do { "
-			        "%s_V_%d(p, (%s_CV_%d(p) | "
-				"((~%s_CV_%d(p)) & %s_MASK_%d))); "
-			    "} while (0)",
-			    P, A, P, A, P, A, P, A);
-			snprintf(writestr, sizeof(writestr),
-			    "do { "
-				"%s_V_%d(p, "
-			            "(%s_CV_%d(p) & ~%s_MASK_%d) | "
-				    "(((v) << %s_SHIFT_%d) & %s_MASK_%d)); "
-			    "} while (0)",
-			    P, A, P, A, P, A,
-			    P, A, P, A);
-		}
-	}
-	if (global->full) {
-		printf("#define %s_READ_%d(p) %s\n", P, A, readstr);
-		printf("#define %s_ISSET_%d(p) %s\n", P, A, issetstr);
-		printf("#define %s_CLEAR_%d(p) %s\n", P, A, clearstr);
-		printf("#define %s_SET_%d(p) %s\n", P, A, setstr);
-		printf("#define %s_WRITE_%d(p, v) %s\n", P, A, writestr);
-	}
-}
-
-static void
-print_enumers(const char *prefixstr, const struct accs *accs)
-{
-	const int A = accs->asv.asiz;
-	struct enumer *enumer;
-
-	SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
-		char enumerstr[32];
-		make_enumerstr(enumerstr, sizeof(enumerstr), accs, enumer->v);
-		printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
-		    P, A, enumer->name, A, enumerstr);
 	}
 }
 
@@ -723,25 +607,140 @@ calc_access_shift(const struct accs *accs)
 		(mask->S % A);
 }
 
+/* Print accessors.  Assume the resulting code uses bf.h. */
 static void
-make_maskstr(char *str, const size_t len, const struct accs *accs)
+print_accs(const char *prefixstr, const struct accs *accs)
 {
-	struct asv Vec_storage, *Vec = &Vec_storage;
-	mask2vec(&accs->asv, Vec);
-	print_maskvec(str, len, accs->asv.asiz, &Vec->sv.u.vec);
+	const int A = accs->asv.asiz;
+#define P prefixstr
+
+	printf("#define %s_INDEX_%d %d\n", P, A, accs->asv.index);
+
+	if (global->full) {
+		printf("#define %s_OCV_%d(p) "
+		    "(*((const uint%d_t *)(p) + %s_INDEX_%d))\n",
+		    P, A, A, P, A);
+		printf("#define %s_OV_%d(p) "
+		    "(*((uint%d_t *)(p) + %s_INDEX_%d))\n",
+		    P, A, A, P, A);
+	}
+
+	char swapstr[16];
+	snprintf(swapstr, sizeof(swapstr), "_BfSwap%s%d",
+	    (global->target == LITTLE) ? "Le" : "Be", A >> 3);
+	printf("#define %s_SWAP_%d %s\n", P, A, swapstr);
+
+	if (global->full) {
+		printf("#define %s_CV_%d(p) (%s_SWAP_%d(%s_OCV_%d(p)))\n",
+		    P, A, P, A, P, A);
+		printf("#define %s_V_%d(p, v) do "
+		    "{ %s_OV_%d(p) = %s_SWAP_%d(v); } while (0)\n",
+		    P, A, P, A, P, A);
+	}
+
+	static char readstr[256];
+	static char issetstr[256];
+	static char clearstr[256];
+	static char setstr[256];
+	static char writestr[256];
+	if (accs->asv.asiz == accs->align) {
+		if (global->full) {
+			snprintf(readstr, sizeof(readstr),
+			    "%s_CV_%d(p)", P, A);
+			snprintf(issetstr, sizeof(readstr),
+			    "(%s_CV_%d(p) != 0)", P, A);
+			snprintf(clearstr, sizeof(clearstr),
+			    "do { %s_V_%d(p, 0); } while (0)", P, A);
+			snprintf(setstr, sizeof(setstr),
+			    "do { "
+			        "%s_V_%d(p, (%s_CV_%d | ~%s_CV_%d(p))); "
+			    "} while (0)",
+			    P, A, P, A, P, A);
+			snprintf(writestr, sizeof(writestr),
+			    "do { %s_V_%d(p, v); } while (0)",
+			    P, A);
+		}
+	} else {
+		const struct mask *mask = &accs->asv.sv.u.mask;
+		char maskstr[32];
+		make_maskstr(maskstr, sizeof(maskstr), &accs->asv);
+		printf("#define %s_SHIFT_%d %d\n",
+		    P, A, accs->asv.sv.shift);
+		printf("#define %s_WIDTH_%d %d\n",
+		    P, A, mask->E - mask->S);
+		printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
+		    P, A, A, maskstr);
+		if (global->full) {
+			snprintf(readstr, sizeof(readstr),
+			    "((%s_CV_%d(p) & %s_MASK_%d) >> %s_SHIFT_%d)",
+			    P, A, P, A, P, A);
+			snprintf(issetstr, sizeof(issetstr),
+			    "((%s_CV_%d(p) & %s_MASK_%d) != 0)",
+			    P, A, P, A);
+			snprintf(clearstr, sizeof(clearstr),
+			    "do { "
+			        "%s_V_%d(p, (%s_CV_%d(p) & ~%s_MASK_%d)); "
+			    "} while (0)",
+			    P, A, P, A, P, A);
+			snprintf(setstr, sizeof(setstr),
+			    "do { "
+			        "%s_V_%d(p, (%s_CV_%d(p) | "
+				"((~%s_CV_%d(p)) & %s_MASK_%d))); "
+			    "} while (0)",
+			    P, A, P, A, P, A, P, A);
+			snprintf(writestr, sizeof(writestr),
+			    "do { "
+				"%s_V_%d(p, "
+			            "(%s_CV_%d(p) & ~%s_MASK_%d) | "
+				    "(((v) << %s_SHIFT_%d) & %s_MASK_%d)); "
+			    "} while (0)",
+			    P, A, P, A, P, A,
+			    P, A, P, A);
+		}
+	}
+	if (global->full) {
+		printf("#define %s_READ_%d(p) %s\n", P, A, readstr);
+		printf("#define %s_ISSET_%d(p) %s\n", P, A, issetstr);
+		printf("#define %s_CLEAR_%d(p) %s\n", P, A, clearstr);
+		printf("#define %s_SET_%d(p) %s\n", P, A, setstr);
+		printf("#define %s_WRITE_%d(p, v) %s\n", P, A, writestr);
+	}
 }
 
 static void
-make_enumerstr(char *str, const size_t len, const struct accs *accs,
+print_enumers(const char *prefixstr, const struct accs *accs)
+{
+	const int A = accs->asv.asiz;
+	struct enumer *enumer;
+
+	SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
+		char enumerstr[32];
+		make_enumerstr(enumerstr, sizeof(enumerstr), &accs->asv,
+		    enumer->v);
+		printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
+		    P, A, enumer->name, A, enumerstr);
+	}
+}
+
+static void
+make_maskstr(char *str, const size_t len, const struct asv *asv)
+{
+	struct asv Vec_storage, *Vec = &Vec_storage;
+	mask2vec(asv, Vec);
+	print_maskvec(str, len, asv->asiz, &Vec->sv.u.vec);
+}
+
+static void
+make_enumerstr(char *str, const size_t len, const struct asv *asv,
     const int v)
 {
 	struct asv sv_storage, *sv = &sv_storage;
-	*sv = accs->asv;
+	*sv = *asv;
 	sv->sv.u.v = v;
 
 	struct asv vec_storage, *vec = &vec_storage;
 	v2vec(sv, vec);
-	print_maskvec(str, len, accs->asv.asiz, &vec->sv.u.vec);
+	print_maskvec(str, len, asv->asiz, &vec->sv.u.vec);
 }
 
 static void
