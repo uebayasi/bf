@@ -492,7 +492,7 @@ print_field(const struct field *field)
 	    global->cur_prefix->name ? global->cur_prefix->name : "",
 	    global->cur_prefix->name ? "_" : "", name);
 
-	/* Privide all access widths >A. */
+	/* Provide all access widths >A. */
 	int a;
 	for (a = A; a <= 64; a <<= 1) {
 		/* Follow explicit access sizes when specified. */
