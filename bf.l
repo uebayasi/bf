@@ -161,6 +161,7 @@ nl		[\n]
 }
 <SIZE>{number} {
 	assert(global->cur_prefix->size == 0);
+	// XXX strtonum
 	global->cur_prefix->size = atoi(yytext);
 	assert(global->cur_field == NULL);
 	BEGIN INITIAL;
@@ -173,6 +174,7 @@ nl		[\n]
 	if (global->cur_field->name != NULL) {
 		BEGIN FIELD_ENUM;
 		enumer_start();
+		// XXX strtonum
 		global->cur_enumer->v = atoi(yytext);
 	} else {
 		fprintf(stderr, "field has no name yet!\n");
@@ -352,7 +354,8 @@ enumer_start(void)
 static void
 enumer_stop(void)
 {
-	SIMPLEQ_INSERT_TAIL(&global->cur_field->enumers, global->cur_enumer, entry);
+	SIMPLEQ_INSERT_TAIL(&global->cur_field->enumers, global->cur_enumer,
+	    entry);
 	global->cur_enumer = NULL;
 }
 
@@ -429,11 +432,12 @@ struct accs {
 
 static void print_field(const struct field *);
 static void print_accs(const char *, const struct accs *);
-static int calc_access_size(struct accs *);
-static void calc_access_shift(struct accs *);
+static int calc_access_size(const struct accs *);
+static int calc_access_shift(const struct accs *);
 static void make_maskstr(char *, size_t, const struct accs *);
 static void print_enumers(const char *, const struct accs *);
-static void make_enumerstr(char *, const size_t, const struct accs *, const int);
+static void make_enumerstr(char *, const size_t, const struct accs *,
+    const int);
 static void print_maskvec(char *, const size_t, const int, const uint8_t *);
 
 #define O	accs->field->offset
@@ -500,7 +504,7 @@ print_field(const struct field *field)
 			continue;
 		accs->accs = a;
 		accs->index = accs->S / accs->accs;
-		calc_access_shift(accs);
+		accs->shift = calc_access_shift(accs);
 		print_accs(prefixstr, accs);
 		print_enumers(prefixstr, accs);
 	}
@@ -519,7 +523,8 @@ print_accs(const char *prefixstr, const struct accs *accs)
 		printf("#define %s_OCV_%d(p) "
 		    "(*((const uint%d_t *)(p) + %s_INDEX_%d))\n",
 		    P, A, A, P, A);
-		printf("#define %s_OV_%d(p) (*((uint%d_t *)(p) + %s_INDEX_%d))\n",
+		printf("#define %s_OV_%d(p) "
+		    "(*((uint%d_t *)(p) + %s_INDEX_%d))\n",
 		    P, A, A, P, A);
 	}
 
@@ -605,7 +610,7 @@ print_accs(const char *prefixstr, const struct accs *accs)
 }
 
 static int
-calc_access_size(struct accs *accs)
+calc_access_size(const struct accs *accs)
 {
 	if (accs->align > 0) {
 		return accs->align;
@@ -646,13 +651,13 @@ calc_access_size(struct accs *accs)
 	}
 }
 
-static void
-calc_access_shift(struct accs *accs)
+static int
+calc_access_shift(const struct accs *accs)
 {
 	const int A = accs->accs;
 
 	/* Shift in register. */
-	accs->shift =
+	return
 	    /* Aligned access - no shift needed. */
 	    (accs->accs == accs->align) ? 0 :
 	    /* Unaligned access. */
@@ -678,7 +683,6 @@ make_maskstr(char *str, const size_t len, const struct accs *accs)
 	const int s = accs->shift;
 	const int e = s + (accs->E - accs->S);
 
-	/* Print mask by 8-bit from MSB. */
 	int i;
 	uint8_t maskvec[8];
 	for (i = 0; i < accs->accs; i += 8) {
@@ -698,12 +702,14 @@ print_enumers(const char *prefixstr, const struct accs *accs)
 	SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
 		char enumerstr[32];
 		make_enumerstr(enumerstr, sizeof(enumerstr), accs, enumer->v);
-		printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n", P, A, enumer->name, A, enumerstr);
+		printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
+		    P, A, enumer->name, A, enumerstr);
 	}
 }
 
 static void
-make_enumerstr(char *str, const size_t len, const struct accs *accs, const int v)
+make_enumerstr(char *str, const size_t len, const struct accs *accs,
+    const int v)
 {
 	int a;
 	int n = 0;
@@ -712,11 +718,28 @@ make_enumerstr(char *str, const size_t len, const struct accs *accs, const int v
 	int i;
 	uint8_t maskvec[8];
 	for (i = 0; i < accs->accs; i += 8) {
-		if (accs->shift - i > 32) {
-			maskvec[i / 8] = 0;
-		} else {
-			maskvec[i / 8] = (((unsigned)v) << (accs->shift - i)) & 0xffU;
+		const int shift = accs->shift - i;
+		/* Check enum range. */
+		int range = 1;
+		if (shift >= 8) {
+			range = 0;
+		} else if (shift < 8 && shift > -8) {
+			if (!(v & 0x000000ff))
+				range = 0;
+		} else if (shift < 0 && shift > -16) {
+			if (!(v & 0x0000ff00))
+				range = 0;
+		} else if (shift < -8 && shift > -24) {
+			if (!(v & 0x00ff0000))
+				range = 0;
+		} else if (shift < -16 && shift > -32) {
+			if (!(v & 0xff000000))
+				range = 0;
 		}
+		uint8_t b = 0;
+		if (range)
+			b = (shift > 0) ? (v << shift) : (v >> -shift);
+		maskvec[i / 8] = b;
 	}
 	print_maskvec(str, len, accs->accs, maskvec);
 }
@@ -724,6 +747,7 @@ make_enumerstr(char *str, const size_t len, const struct accs *accs, const int v
 static void
 print_maskvec(char *str, const size_t len, const int A, const uint8_t *maskvec)
 {
+	/* Print mask by 8-bit from MSB. */
 	int n = 0;
 	int a;
 	for (a = A - 8; a >= 0; a -= 8) {
