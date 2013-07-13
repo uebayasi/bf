@@ -729,9 +729,15 @@ mask2vec(const struct asv *asv, struct asv *vec)
 	const int e = s + (mask->E - mask->S);
 	int i;
 	for (i = 0; i < asv->asiz; i += 8) {
-		const int p = MAX(0, s - i);
-		const int q = MAX(0, e - i);
-		vec->sv.u.vec.vs[i / 8] = _BfMaskWN(1, p, q - p);
+		uint8_t b;
+		if (s >= i + 8 || e <= i)
+			b = 0;
+		else {
+			const int p = MAX(0, s - i);
+			const int q = MAX(0, e - i);
+			b = _BfMaskWN(1, p, q - p);
+		}
+		vec->sv.u.vec.vs[i / 8] = b;
 	}
 }
 
@@ -742,11 +748,12 @@ v2vec(const struct asv *asv, struct asv *vec)
 	int i;
 	for (i = 0; i < asv->asiz; i += 8) {
 		const int shift = asv->sv.shift - i;
+		uint8_t b;
 		if (shift > 8 || shift < -31)
-			vec->sv.u.vec.vs[i / 8] = 0;
+			b = 0;
 		else
-			vec->sv.u.vec.vs[i / 8] = (shift > 0) ?
-			    (v << shift) : (v >> -shift);
+			b = (shift > 0) ?  (v << shift) : (v >> -shift);
+		vec->sv.u.vec.vs[i / 8] = b;
 	}
 }
 
