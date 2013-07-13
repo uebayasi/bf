@@ -457,6 +457,7 @@ struct accs {
 	const struct field *field;
 	enum endian target;
 	int align;
+	int minasiz;
 };
 
 static void print_accs(const char *, struct accs *);
@@ -518,11 +519,11 @@ print_accs(const char *prefixstr, struct accs *accs)
 	accs->align = MIN(MIN(_BfAlign(mask.S), _BfAlign(mask.E)), 8) << 3;
 
 	/* Minimal register access width == alignment size. */
-	const int A = calc_access_size(accs->align, &mask);
+	accs->minasiz = calc_access_size(accs->align, &mask);
 
 	/* Provide all access widths >A. */
 	int a;
-	for (a = A; a <= 64; a <<= 1) {
+	for (a = accs->minasiz; a <= 64; a <<= 1) {
 		/* Follow explicit access sizes when specified. */
 		if (global->access != 0 && (global->access & a) == 0)
 			continue;
