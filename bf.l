@@ -29,6 +29,11 @@ struct prefix;
 struct field;
 struct enumer;
 
+/* Contiguous mask bits between S-th bit and E-th bit. */
+struct mask {
+	int S, E;
+};
+
 SIMPLEQ_HEAD(prefixes, prefix);
 SIMPLEQ_HEAD(fields, field);
 SIMPLEQ_HEAD(enumers, enumer);
@@ -43,6 +48,7 @@ struct field {
 	char *name;
 	int offset;
 	int width;
+	struct mask mask;
 	struct enumers enumers;
 	struct enumer *cur_enumer;
 };
@@ -339,6 +345,9 @@ field_stop(void)
 	}
 	assert(offset + global->cur_field->width <= global->cur_prefix->size);
 	global->cur_field->offset = offset;
+	/* Fill mask. */
+	global->cur_field->mask.S = offset;
+	global->cur_field->mask.E = offset + global->cur_field->width;
 	global->prev_field = global->cur_field;
 	field_print(global->cur_field);
 	global->cur_field = NULL;
@@ -427,11 +436,6 @@ enumer_free(struct enumer *enumer)
  * Print bit-field accessors.
  */
 
-/* Contiguous mask bits between S-th bit and E-th bit. */
-struct mask {
-	int S, E;
-};
-
 /* Value represented as byte vector. */
 struct vec {
 	uint8_t vs[8];
@@ -460,8 +464,7 @@ struct asv {
 
 /* Access. */
 struct accs {
-	const struct field *field;
-	enum endian target;
+	const struct enumers *enumers;
 	int align;
 	int minasiz;
 	struct asv asvs[4];
@@ -471,7 +474,7 @@ struct accs {
 #define a2idx(a) \
     (((((a) >> 3) & 0xc) ? 0x2 : 0) | ((((a) >> 3) & 0x6) ? 0x1 : 0))
 
-static void analyze_accs(struct accs *);
+static void analyze_accs(const struct mask *, struct accs *);
 static int calc_access_align(const struct mask *);
 static int calc_access_size(const int, const struct mask *);
 static int calc_access_shift(const int, const int, const struct mask *);
@@ -488,10 +491,9 @@ static void
 field_print(const struct field *field)
 {
 	struct accs accs_storage = {
-		.field = field,
-		.target = global->target,
+		.enumers = &field->enumers,
 	}, *accs = &accs_storage;
-	analyze_accs(accs);
+	analyze_accs(&field->mask, accs);
 
 	const char *fmt = "/* field: name=%s offset=%d width=%d */\n";
 	static int once = 0;
@@ -518,25 +520,21 @@ field_print(const struct field *field)
 }
 
 static void
-analyze_accs(struct accs *accs)
+analyze_accs(const struct mask *mask, struct accs *accs)
 {
-	const int O = accs->field->offset;
-	const int W = accs->field->width;
-	const struct mask mask = { O, O + W };
-
 	/* Check alignment.  Aligned access is simpler (only byte-swaps). */
-	accs->align = calc_access_align(&mask);
+	accs->align = calc_access_align(mask);
 
 	/* Minimal register access width == alignment size. */
-	accs->minasiz = calc_access_size(accs->align, &mask);
+	accs->minasiz = calc_access_size(accs->align, mask);
 
 	int a;
 	for (a = accs->minasiz; a <= 64; a <<= 1) {
 		struct asv *asv = &accs->asvs[a2idx(a)];
 		asv->asiz = a;
-		asv->index = O / a;
-		asv->sv.shift = calc_access_shift(accs->align, a, &mask);
-		asv->sv.u.mask = mask;
+		asv->index = mask->S / a;
+		asv->sv.shift = calc_access_shift(accs->align, a, mask);
+		asv->sv.u.mask = *mask;
 	}
 }
 
@@ -625,7 +623,7 @@ print_accs(const char *prefixstr, struct accs *accs)
 		struct asv *asv = &accs->asvs[a2idx(a)];
 		print_mask(prefixstr, asv);
 		struct enumer *enumer;
-		SIMPLEQ_FOREACH(enumer, &accs->field->enumers, entry) {
+		SIMPLEQ_FOREACH(enumer, accs->enumers, entry) {
 			print_enumer(prefixstr, asv, enumer);
 		}
 	}
