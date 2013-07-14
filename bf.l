@@ -333,24 +333,25 @@ field_start(void)
 static void
 field_stop(void)
 {
-	struct field *prev = global->prev_field;
-	const int offset = prev ? (prev->offset + prev->width) : 0;
+	struct field *cur = global->cur_field, *prev = global->prev_field;
 
-	if (offset + global->cur_field->width > global->cur_prefix->size) {
+	/* Offset is known now.  Fill mask too. */
+	cur->mask.S = cur->offset = prev ? prev->mask.E : 0;
+	cur->mask.E = cur->mask.S + cur->width;
+
+	if (cur->mask.E > global->cur_prefix->size) {
 		fprintf(stderr, "%s: field %s exceeding size "
 		    "(offset=%d width=%d size=%d)\n",
-		    __func__, global->cur_field->name,
-		    offset, global->cur_field->width, global->cur_prefix->size);
+		    __func__, cur->name,
+		    cur->offset, cur->width, global->cur_prefix->size);
 		exit(1);
 	}
-	assert(offset + global->cur_field->width <= global->cur_prefix->size);
-	global->cur_field->offset = offset;
-	/* Fill mask. */
-	global->cur_field->mask.S = offset;
-	global->cur_field->mask.E = offset + global->cur_field->width;
+	assert(cur->mask.E <= global->cur_prefix->size);
+	/* Remember prev for future. */
 	global->prev_field = global->cur_field;
-	field_print(global->cur_field);
 	global->cur_field = NULL;
+	/* Be done. */
+	field_print(cur);
 }
 
 static void
