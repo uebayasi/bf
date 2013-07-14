@@ -570,7 +570,7 @@ calc_access_size(const int align, const struct mask *mask)
 		int i = mask->S / NBBY;
 		int j = (mask->E - 1) / NBBY;
 
-		int a = 1;
+		int asiz = 8;
 
 		while (i > 0 && j > 0) {
 			/*
@@ -579,16 +579,14 @@ calc_access_size(const int align, const struct mask *mask)
 			 */
 			if (i == j)
 				break;
-			/* Max is 8 (== 64-bit) access. */
-			if (a == 8)
-				break;
 			/* Larger alignment next. */
-			a <<= 1;
+			asiz <<= 1;
 			i >>= 1;
 			j >>= 1;
 		}
 
-		return a << 3;
+		/* Max is 64-bit access. */
+		return MIN(asiz, 64);
 	}
 }
 
@@ -635,9 +633,8 @@ print_accs(const char *prefixstr, struct accs *accs)
 static void
 print_mask(const char *prefixstr, const struct aiv *aiv, const int align)
 {
-	const int A = aiv->asiz;
 #define P prefixstr
-
+#define A aiv->asiz
 	printf("#define %s_INDEX_%d %d\n", P, A, aiv->index);
 
 	if (global->full) {
@@ -719,8 +716,7 @@ print_mask(const char *prefixstr, const struct aiv *aiv, const int align)
 			            "(%s_CV_%d(p) & ~%s_MASK_%d) | "
 				    "(((v) << %s_SHIFT_%d) & %s_MASK_%d)); "
 			    "} while (0)",
-			    P, A, P, A, P, A,
-			    P, A, P, A);
+			    P, A, P, A, P, A, P, A, P, A);
 		}
 	}
 	if (global->full) {
@@ -736,8 +732,6 @@ static void
 print_enumer(const char *prefixstr, const struct aiv *aiv,
     const struct enumer *enumer)
 {
-	const int A = aiv->asiz;
-
 	struct aiv v_storage, *v = &v_storage;
 	*v = *aiv;
 	v->sv.u.v = enumer->v;
@@ -747,6 +741,8 @@ print_enumer(const char *prefixstr, const struct aiv *aiv,
 
 	printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
 	    P, A, enumer->name, A, enumerstr);
+#undef	A
+#undef	P
 }
 
 static void
