@@ -46,26 +46,6 @@
 #define __U4X			UINT32_MAX
 #define __U8X			UINT64_MAX
 
-/* _BfMask*N()'s return an exact-width unsigned integer value. */
-#define	_BfMask0N(N, s)		((__U##N##C(1) << (s)) - 1)
-#define	_BfMaskN(N, s)		(((s) >= (N * NBBY)) ? \
-				 __U##N##X : _BfMask0N(N, (s)))
-/* Mask with width (range mask). */
-#define _BfMaskWN(N, s, w)	(_BfMaskN(N, (s) + (w)) & ~_BfMaskN(N, (s)))
-
-/* Mask shift-out/shift-in. */
-#define _BfMaskO(b, m, s)	(((b) & (m)) >> (s))
-#define _BfMaskI(v, m, s)	(((v) << (s)) & (m))
-
-/* Mask ops (isset, clear, set), here "set" == "|" (or). */
-#define _BfIsSet(m)		((m) != 0)
-#define _BfStmt(s)		do { s; } while (0)
-#define _BfClr(b, m)		_BfStmt((b) &= ~(m))
-#define _BfSet(b, m)		_BfStmt((b) |= (m))
-
-/* Bit-field write op is actually clear + set. */
-#define _BfClrSet(b, m, n)	_BfStmt(_BfClr((b), (m)); _BfSet((b), (n)))
-
 /*
  * Byte order
  */
@@ -128,16 +108,6 @@
 #define _BfSwapBe4(x)	_BfSwap4(x)
 #define _BfSwapBe8(x)	_BfSwap8(x)
 #endif
-
-/*
- * Alignment.
- */
-
-/* (o & -o) is right most bit set. */
-#define _BfAlignRMB(o)	((o) & -(o))
-#define _BfAlign0(o)	((o) == 0 ? (1 << 30)/*INT_MAX*/ : _BfAlignRMB(o))
-/* 0 - unaligned, 1 - 8-bit aligned, 2: 16-bit aligned, ... */
-#define _BfAlign(o)	(_BfAlign0(o) >> 3)
 
 /*
  * Accessors.

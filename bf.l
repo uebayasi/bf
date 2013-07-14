@@ -23,8 +23,8 @@
 #include <stdlib.h>
 #include "queue.h"
 
-#define MINASIZ 8
-#define MAXASIZ 64
+#define MINASIZ NBBY
+#define MAXASIZ (8 * NBBY)
 
 long long strtonum(const char *, long long, long long, const char **);
 
@@ -542,6 +542,10 @@ analyze_accs(const struct mask *mask, struct accs *accs)
 	}
 }
 
+/* Right most bit set. */
+#define _BfAlignRMB(o)	((o) & -(o))
+#define _BfAlign(o)	((o) == 0 ? (1 << 30)/*INT_MAX*/ : _BfAlignRMB(o))
+
 static int
 calc_access_align(const struct mask *mask)
 {
@@ -553,7 +557,7 @@ calc_access_align(const struct mask *mask)
 	/*
 	 * Ignore alignment more than 64-bit.
 	 */
-	return MIN(align << 3, MAXASIZ);
+	return MIN(align, MAXASIZ);
 }
 
 static int
@@ -573,8 +577,8 @@ calc_access_size(const int align, const struct mask *mask)
 		 */
 
 		/* 8-bit indexes. */
-		int i = mask->S / NBBY;
-		int j = (mask->E - 1) / NBBY;
+		int i = mask->S / MINASIZ;
+		int j = (mask->E - 1) / MINASIZ;
 
 		int asiz = MINASIZ;
 
@@ -751,6 +755,11 @@ print_enumer(const char *prefixstr, const struct aiv *aiv,
 #undef	P
 }
 
+/* 8-bit range mask. */
+#define	_BfMask0(s)		((1 << (s)) - 1)
+#define	_BfMask(s)		(((s) >= NBBY) ? 0xffU : _BfMask0((s)))
+#define _BfMaskR(s, e)		(_BfMask((e)) & ~_BfMask((s)))
+
 static void
 mask2vec(const struct aiv *aiv, struct aiv *vec)
 {
@@ -765,7 +774,7 @@ mask2vec(const struct aiv *aiv, struct aiv *vec)
 		else {
 			const int p = MAX(0, s);
 			const int q = MAX(0, e);
-			b = _BfMaskWN(1, p, q - p);
+			b = _BfMaskR(p, q);
 		}
 		vec->sv.u.vec.vs[i / NBBY] = b;
 	}
