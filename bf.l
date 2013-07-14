@@ -479,7 +479,7 @@ static int calc_access_align(const struct mask *);
 static int calc_access_size(const int, const struct mask *);
 static int calc_access_shift(const int, const int, const struct mask *);
 static void print_accs(const char *, struct accs *);
-static void print_mask(const char *, const struct aiv *);
+static void print_mask(const char *, const struct aiv *, const int);
 static void print_enumer(const char *, const struct aiv *,
     const struct enumer *);
 static void print_vec(char *, const size_t, const struct aiv *,
@@ -543,9 +543,13 @@ calc_access_align(const struct mask *mask)
 {
 	/*
 	 * Calc alignment by checking the right most bit.
+	 */
+	const int align = MIN(_BfAlign(mask->S), _BfAlign(mask->E));
+
+	/*
 	 * Ignore alignment more than 64-bit.
 	 */
-	return MIN(MIN(_BfAlign(mask->S), _BfAlign(mask->E)) << 3, 64);
+	return MIN(align << 3, 64);
 }
 
 static int
@@ -621,7 +625,7 @@ print_accs(const char *prefixstr, struct accs *accs)
 		if (global->access != 0 && (global->access & a) == 0)
 			continue;
 		struct aiv *aiv = &accs->aivs[a2idx(a)];
-		print_mask(prefixstr, aiv);
+		print_mask(prefixstr, aiv, accs->align);
 		struct enumer *enumer;
 		SIMPLEQ_FOREACH(enumer, accs->enumers, entry) {
 			print_enumer(prefixstr, aiv, enumer);
@@ -631,7 +635,7 @@ print_accs(const char *prefixstr, struct accs *accs)
 
 /* Print accessors.  Assume the resulting code uses bf.h. */
 static void
-print_mask(const char *prefixstr, const struct aiv *aiv)
+print_mask(const char *prefixstr, const struct aiv *aiv, const int align)
 {
 	const int A = aiv->asiz;
 #define P prefixstr
@@ -665,7 +669,7 @@ print_mask(const char *prefixstr, const struct aiv *aiv)
 	static char clearstr[256];
 	static char setstr[256];
 	static char writestr[256];
-	if (aiv->sv.shift == 0) {
+	if (align == aiv->asiz) {
 		if (global->full) {
 			snprintf(readstr, sizeof(readstr),
 			    "%s_CV_%d(p)", P, A);
