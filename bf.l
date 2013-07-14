@@ -455,7 +455,7 @@ struct sv {
 };
 
 /* Value with access-size and index. */
-struct asv {
+struct aiv {
 	/* Real value is, (v << shift + (asiz * index)). */
 	int asiz;
 	int index;
@@ -467,7 +467,7 @@ struct accs {
 	const struct enumers *enumers;
 	int align;
 	int minasiz;
-	struct asv asvs[4];
+	struct aiv aivs[4];
 };
 
 /* 8/16/32/64 -> 0/1/2/3 */
@@ -479,13 +479,13 @@ static int calc_access_align(const struct mask *);
 static int calc_access_size(const int, const struct mask *);
 static int calc_access_shift(const int, const int, const struct mask *);
 static void print_accs(const char *, struct accs *);
-static void print_mask(const char *, const struct asv *);
-static void print_enumer(const char *, const struct asv *,
+static void print_mask(const char *, const struct aiv *);
+static void print_enumer(const char *, const struct aiv *,
     const struct enumer *);
-static void print_vec(char *, const size_t, const struct asv *,
-    void (*)(const struct asv *, struct asv *));
-static void mask2vec(const struct asv *, struct asv *);
-static void v2vec(const struct asv *, struct asv *);
+static void print_vec(char *, const size_t, const struct aiv *,
+    void (*)(const struct aiv *, struct aiv *));
+static void mask2vec(const struct aiv *, struct aiv *);
+static void v2vec(const struct aiv *, struct aiv *);
 
 static void
 field_print(const struct field *field)
@@ -530,11 +530,11 @@ analyze_accs(const struct mask *mask, struct accs *accs)
 
 	int a;
 	for (a = accs->minasiz; a <= 64; a <<= 1) {
-		struct asv *asv = &accs->asvs[a2idx(a)];
-		asv->asiz = a;
-		asv->index = mask->S / a;
-		asv->sv.shift = calc_access_shift(accs->align, a, mask);
-		asv->sv.u.mask = *mask;
+		struct aiv *aiv = &accs->aivs[a2idx(a)];
+		aiv->asiz = a;
+		aiv->index = mask->S / a;
+		aiv->sv.shift = calc_access_shift(accs->align, a, mask);
+		aiv->sv.u.mask = *mask;
 	}
 }
 
@@ -620,23 +620,23 @@ print_accs(const char *prefixstr, struct accs *accs)
 		/* Follow explicit access sizes when specified. */
 		if (global->access != 0 && (global->access & a) == 0)
 			continue;
-		struct asv *asv = &accs->asvs[a2idx(a)];
-		print_mask(prefixstr, asv);
+		struct aiv *aiv = &accs->aivs[a2idx(a)];
+		print_mask(prefixstr, aiv);
 		struct enumer *enumer;
 		SIMPLEQ_FOREACH(enumer, accs->enumers, entry) {
-			print_enumer(prefixstr, asv, enumer);
+			print_enumer(prefixstr, aiv, enumer);
 		}
 	}
 }
 
 /* Print accessors.  Assume the resulting code uses bf.h. */
 static void
-print_mask(const char *prefixstr, const struct asv *asv)
+print_mask(const char *prefixstr, const struct aiv *aiv)
 {
-	const int A = asv->asiz;
+	const int A = aiv->asiz;
 #define P prefixstr
 
-	printf("#define %s_INDEX_%d %d\n", P, A, asv->index);
+	printf("#define %s_INDEX_%d %d\n", P, A, aiv->index);
 
 	if (global->full) {
 		printf("#define %s_OCV_%d(p) "
@@ -665,7 +665,7 @@ print_mask(const char *prefixstr, const struct asv *asv)
 	static char clearstr[256];
 	static char setstr[256];
 	static char writestr[256];
-	if (asv->sv.shift == 0) {
+	if (aiv->sv.shift == 0) {
 		if (global->full) {
 			snprintf(readstr, sizeof(readstr),
 			    "%s_CV_%d(p)", P, A);
@@ -684,11 +684,11 @@ print_mask(const char *prefixstr, const struct asv *asv)
 		}
 	} else {
 		char maskstr[32];
-		print_vec(maskstr, sizeof(maskstr), asv, mask2vec);
+		print_vec(maskstr, sizeof(maskstr), aiv, mask2vec);
 
-		const struct mask *mask = &asv->sv.u.mask;
+		const struct mask *mask = &aiv->sv.u.mask;
 		printf("#define %s_SHIFT_%d %d\n",
-		    P, A, asv->sv.shift);
+		    P, A, aiv->sv.shift);
 		printf("#define %s_WIDTH_%d %d\n",
 		    P, A, mask->E - mask->S);
 		printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
@@ -731,13 +731,13 @@ print_mask(const char *prefixstr, const struct asv *asv)
 }
 
 static void
-print_enumer(const char *prefixstr, const struct asv *asv,
+print_enumer(const char *prefixstr, const struct aiv *aiv,
     const struct enumer *enumer)
 {
-	const int A = asv->asiz;
+	const int A = aiv->asiz;
 
-	struct asv v_storage, *v = &v_storage;
-	*v = *asv;
+	struct aiv v_storage, *v = &v_storage;
+	*v = *aiv;
 	v->sv.u.v = enumer->v;
 
 	char enumerstr[32];
@@ -748,13 +748,13 @@ print_enumer(const char *prefixstr, const struct asv *asv,
 }
 
 static void
-mask2vec(const struct asv *asv, struct asv *vec)
+mask2vec(const struct aiv *aiv, struct aiv *vec)
 {
-	const struct mask *mask = &asv->sv.u.mask;
-	int s = asv->sv.shift;
+	const struct mask *mask = &aiv->sv.u.mask;
+	int s = aiv->sv.shift;
 	int e = s + (mask->E - mask->S);
 	int i;
-	for (i = 0; i < asv->asiz; i += 8, s -= 8, e -= 8) {
+	for (i = 0; i < aiv->asiz; i += 8, s -= 8, e -= 8) {
 		uint8_t b;
 		if (s >= 8 || e <= 0)
 			b = 0;
@@ -768,12 +768,12 @@ mask2vec(const struct asv *asv, struct asv *vec)
 }
 
 static void
-v2vec(const struct asv *asv, struct asv *vec)
+v2vec(const struct aiv *aiv, struct aiv *vec)
 {
-	const int v = asv->sv.u.v;
+	const int v = aiv->sv.u.v;
 	int i;
-	for (i = 0; i < asv->asiz; i += 8) {
-		const int shift = asv->sv.shift - i;
+	for (i = 0; i < aiv->asiz; i += 8) {
+		const int shift = aiv->sv.shift - i;
 		uint8_t b;
 		if (shift > 8 || shift < -31)
 			b = 0;
@@ -784,16 +784,16 @@ v2vec(const struct asv *asv, struct asv *vec)
 }
 
 static void
-print_vec(char *str, const size_t len, const struct asv *asv,
-    void (*x2vec)(const struct asv *, struct asv *))
+print_vec(char *str, const size_t len, const struct aiv *aiv,
+    void (*x2vec)(const struct aiv *, struct aiv *))
 {
-	struct asv vec_storage, *vec = &vec_storage;
-	(*x2vec)(asv, vec);
+	struct aiv vec_storage, *vec = &vec_storage;
+	(*x2vec)(aiv, vec);
 
 	/* Print mask as hex string by 8-bit from MSB. */
 	int n = 0;
 	int a;
-	for (a = asv->asiz - 8; a >= 0; a -= 8) {
+	for (a = aiv->asiz - 8; a >= 0; a -= 8) {
 		assert(n < len);
 		n += snprintf(str + n, len - n, "%02x",
 		    vec->sv.u.vec.vs[a / 8]);
