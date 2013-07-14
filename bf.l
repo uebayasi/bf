@@ -37,28 +37,31 @@ struct mask {
 	int S, E;
 };
 
+struct num {
+	int v;
+};
+
 SIMPLEQ_HEAD(prefixes, prefix);
 SIMPLEQ_HEAD(fields, field);
 SIMPLEQ_HEAD(enumers, enumer);
 struct prefix {
 	SIMPLEQ_ENTRY(prefix) entry;
-	char *name;
+	const char *name;
 	int size;
 	struct fields fields;
 };
 struct field {
 	SIMPLEQ_ENTRY(field) entry;
-	char *name;
+	const char *name;
 	int offset;
 	int width;
 	struct mask mask;
 	struct enumers enumers;
-	struct enumer *cur_enumer;
 };
 struct enumer {
 	SIMPLEQ_ENTRY(enumer) entry;
-	char *name;
-	int v;
+	const char *name;
+	struct num num;
 };
 enum endian {
 	LITTLE = 1,
@@ -83,7 +86,6 @@ struct global {
 	enum endian target;
 } global_storage = {
 	.prefixes = SIMPLEQ_HEAD_INITIALIZER(global_storage.prefixes),
-	.target = LITTLE,
 }, *global = &global_storage;
 %}
 
@@ -184,7 +186,7 @@ nl		[\n]
 	if (global->cur_field->name != NULL) {
 		BEGIN FIELD_ENUM;
 		enumer_start();
-		global->cur_enumer->v = strtonum(yytext, 0, 1 << 30, NULL);
+		global->cur_enumer->num.v = strtonum(yytext, 0, 1 << 30, NULL);
 	} else {
 		fprintf(stderr, "field has no name yet!\n");
 		exit(1);
@@ -201,7 +203,7 @@ nl		[\n]
 
 <FIELD_ENUM>{id} {
 	assert(global->cur_enumer != NULL);
-	assert(global->cur_enumer->v != -1);
+	assert(global->cur_enumer->num.v != -1);
 	global->cur_enumer->name = strdup(yytext);
 	enumer_stop();
 	BEGIN FIELD;
@@ -328,6 +330,10 @@ prefix_stop(void)
 static void
 field_start(void)
 {
+	if (global->target == 0) {
+		fprintf(stderr, "target endian not set\n");
+		exit(1);
+	}
 	assert(global->cur_field == NULL);
 	global->cur_field = field_alloc();
 	global->cur_field->width = strtonum(yytext, 0, 1 << 30, NULL);
@@ -426,7 +432,7 @@ enumer_alloc(void)
 	struct enumer *new_enumer;
 
 	new_enumer = calloc(sizeof(*new_enumer), 1);
-	new_enumer->v = -1;
+	new_enumer->num.v = -1;
 	return new_enumer;
 }
 
@@ -451,8 +457,8 @@ struct sv {
 	union {
 		/* Real value is (mask << shift). */
 		struct mask mask;
-		/* Real value is (v << shift). */
-		int v;
+		/* Real value is (num.v << shift). */
+		struct num num;
 		/* Real value is ((vec[0] | vec[(1] << 8) | ...) << shift). */
 		struct vec vec;
 	} u;
@@ -489,7 +495,7 @@ static void print_enumer(const char *, const struct aiv *,
 static void print_vec(char *, const size_t, const struct aiv *,
     void (*)(const struct aiv *, struct aiv *));
 static void mask2vec(const struct aiv *, struct aiv *);
-static void v2vec(const struct aiv *, struct aiv *);
+static void num2vec(const struct aiv *, struct aiv *);
 
 static void
 field_print(const struct field *field)
@@ -744,10 +750,10 @@ print_enumer(const char *prefixstr, const struct aiv *aiv,
 {
 	struct aiv v_storage, *v = &v_storage;
 	*v = *aiv;
-	v->sv.u.v = enumer->v;
+	v->sv.u.num.v = enumer->num.v;
 
 	char enumerstr[32];
-	print_vec(enumerstr, sizeof(enumerstr), v, v2vec);
+	print_vec(enumerstr, sizeof(enumerstr), v, num2vec);
 
 	printf("#define %s_ENUM_%d_%s UINT%d_C(0x%s)\n",
 	    P, A, enumer->name, A, enumerstr);
@@ -781,9 +787,9 @@ mask2vec(const struct aiv *aiv, struct aiv *vec)
 }
 
 static void
-v2vec(const struct aiv *aiv, struct aiv *vec)
+num2vec(const struct aiv *aiv, struct aiv *vec)
 {
-	const int v = aiv->sv.u.v;
+	const int v = aiv->sv.u.num.v;
 	int i;
 	for (i = 0; i < aiv->asiz; i += NBBY) {
 		const int shift = aiv->sv.shift - i;
@@ -833,7 +839,7 @@ static void
 dump(struct prefix *prefix)
 {
 	struct layout *layout = dump_layout_alloc();
-	char *name = global->cur_prefix->name;
+	const char *name = global->cur_prefix->name;
 
 	putchar('\n');
 	printf("/*\n");
@@ -959,7 +965,7 @@ dump_fields_legend(void)
 
 	printf(" * ");
 	SIMPLEQ_FOREACH(field, &global->cur_prefix->fields, entry) {
-		char * const name =
+		const char * const name =
 		    (field->name != NULL) ? field->name : "(unused)";
 		printf("%s%c:%d:%s",
 		    (C == 'a') ? "" : " ", C, field->width, name);
