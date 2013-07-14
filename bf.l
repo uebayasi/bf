@@ -70,7 +70,7 @@ static void enumer_start(void);
 static void enumer_stop(void);
 
 struct global {
-	int access;
+	int asiz;
 	int verbose;
 	int full;
 	struct prefixes prefixes;
@@ -254,17 +254,17 @@ setup(int argc, char *argv[])
 	extern char *optarg;
 
 	while ((c = getopt(argc, argv, "a:fv")) != -1) {
-		int a;
+		int asiz;
 		switch (c) {
 		case 'a':
-			a = atoi(optarg);
-			switch (a) {
+			asiz = atoi(optarg);
+			switch (asiz) {
 			case 8: case 16: case 32: case 64:
-				global->access |= a;
+				global->asiz |= asiz;
 				break;
 			default:
 				fprintf(stderr, "invalid access size (%d)\n",
-				    a);
+				    asiz);
 				exit(1);
 				/* NOTREACHED */
 			}
@@ -469,7 +469,7 @@ struct accs {
 };
 
 /* 8/16/32/64 -> 0/1/2/3 */
-#define a2idx(a) \
+#define asiz2idx(a) \
     (((((a) >> 3) & 0xc) ? 0x2 : 0) | ((((a) >> 3) & 0x6) ? 0x1 : 0))
 
 static void analyze_accs(const struct mask *, struct accs *);
@@ -526,11 +526,11 @@ analyze_accs(const struct mask *mask, struct accs *accs)
 	/* Minimal register access width == alignment size. */
 	accs->minasiz = calc_access_size(accs->align, mask);
 
-	int a;
-	for (a = accs->minasiz; a <= 64; a <<= 1) {
-		struct aiv *aiv = &accs->aivs[a2idx(a)];
-		aiv->asiz = a;
-		aiv->index = mask->S / a;
+	int asiz;
+	for (asiz = accs->minasiz; asiz <= 64; asiz <<= 1) {
+		struct aiv *aiv = &accs->aivs[asiz2idx(a)];
+		aiv->asiz = asiz;
+		aiv->index = mask->S / asiz;
 		aiv->sv.shift = calc_access_shift(accs->align, a, mask);
 		aiv->sv.u.mask = *mask;
 	}
@@ -615,12 +615,12 @@ static void
 print_accs(const char *prefixstr, struct accs *accs)
 {
 	/* Provide all access widths >A. */
-	int a;
-	for (a = accs->minasiz; a <= 64; a <<= 1) {
+	int asiz;
+	for (asiz = accs->minasiz; asiz <= 64; asiz <<= 1) {
 		/* Follow explicit access sizes when specified. */
-		if (global->access != 0 && (global->access & a) == 0)
+		if (global->asiz != 0 && (global->asiz & asiz) == 0)
 			continue;
-		struct aiv *aiv = &accs->aivs[a2idx(a)];
+		struct aiv *aiv = &accs->aivs[asiz2idx(asiz)];
 		print_mask(prefixstr, aiv, accs->align);
 		struct enumer *enumer;
 		SIMPLEQ_FOREACH(enumer, accs->enumers, entry) {
@@ -790,11 +790,11 @@ print_vec(char *str, const size_t len, const struct aiv *aiv,
 
 	/* Print mask as hex string by 8-bit from MSB. */
 	int n = 0;
-	int a;
-	for (a = aiv->asiz - 8; a >= 0; a -= 8) {
+	int asiz;
+	for (asiz = aiv->asiz - 8; asiz >= 0; asiz -= 8) {
 		assert(n < len);
 		n += snprintf(str + n, len - n, "%02x",
-		    vec->sv.u.vec.vs[a / 8]);
+		    vec->sv.u.vec.vs[asiz / 8]);
 	}
 }
 
