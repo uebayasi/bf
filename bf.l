@@ -259,10 +259,7 @@ setup(int argc, char *argv[])
 		case 'a':
 			a = atoi(optarg);
 			switch (a) {
-			case 8:
-			case 16:
-			case 32:
-			case 64:
+			case 8: case 16: case 32: case 64:
 				global->access |= a;
 				break;
 			default:
@@ -327,7 +324,7 @@ field_start(void)
 {
 	assert(global->cur_field == NULL);
 	global->cur_field = field_alloc();
-	global->cur_field->width = atoi(yytext);
+	global->cur_field->width = strtonum(yytext, 0, 1 << 30, NULL);
 }
 
 static void
