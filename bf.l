@@ -23,6 +23,9 @@
 #include <stdlib.h>
 #include "queue.h"
 
+#define MINASIZ 8
+#define MAXASIZ 64
+
 long long strtonum(const char *, long long, long long, const char **);
 
 struct prefix;
@@ -257,9 +260,12 @@ setup(int argc, char *argv[])
 		int asiz;
 		switch (c) {
 		case 'a':
-			asiz = atoi(optarg);
+			asiz = strtonum(optarg, MINASIZ, MAXASIZ, NULL);
 			switch (asiz) {
-			case 8: case 16: case 32: case 64:
+			case MINASIZ:
+			case 2*MINASIZ:
+			case 4*MINASIZ:
+			case MAXASIZ:
 				global->asiz |= asiz;
 				break;
 			default:
@@ -436,7 +442,7 @@ enumer_free(struct enumer *enumer)
 
 /* Value represented as byte vector. */
 struct vec {
-	uint8_t vs[8];
+	uint8_t vs[MAXASIZ / NBBY];
 };
 
 /* Value with shift. */
@@ -527,11 +533,11 @@ analyze_accs(const struct mask *mask, struct accs *accs)
 	accs->minasiz = calc_access_size(accs->align, mask);
 
 	int asiz;
-	for (asiz = accs->minasiz; asiz <= 64; asiz <<= 1) {
-		struct aiv *aiv = &accs->aivs[asiz2idx(a)];
+	for (asiz = accs->minasiz; asiz <= MAXASIZ; asiz <<= 1) {
+		struct aiv *aiv = &accs->aivs[asiz2idx(asiz)];
 		aiv->asiz = asiz;
 		aiv->index = mask->S / asiz;
-		aiv->sv.shift = calc_access_shift(accs->align, a, mask);
+		aiv->sv.shift = calc_access_shift(accs->align, asiz, mask);
 		aiv->sv.u.mask = *mask;
 	}
 }
@@ -547,7 +553,7 @@ calc_access_align(const struct mask *mask)
 	/*
 	 * Ignore alignment more than 64-bit.
 	 */
-	return MIN(align << 3, 64);
+	return MIN(align << 3, MAXASIZ);
 }
 
 static int
@@ -570,7 +576,7 @@ calc_access_size(const int align, const struct mask *mask)
 		int i = mask->S / NBBY;
 		int j = (mask->E - 1) / NBBY;
 
-		int asiz = 8;
+		int asiz = MINASIZ;
 
 		while (i > 0 && j > 0) {
 			/*
@@ -586,7 +592,7 @@ calc_access_size(const int align, const struct mask *mask)
 		}
 
 		/* Max is 64-bit access. */
-		return MIN(asiz, 64);
+		return MIN(asiz, MAXASIZ);
 	}
 }
 
@@ -616,7 +622,7 @@ print_accs(const char *prefixstr, struct accs *accs)
 {
 	/* Provide all access widths >A. */
 	int asiz;
-	for (asiz = accs->minasiz; asiz <= 64; asiz <<= 1) {
+	for (asiz = accs->minasiz; asiz <= MAXASIZ; asiz <<= 1) {
 		/* Follow explicit access sizes when specified. */
 		if (global->asiz != 0 && (global->asiz & asiz) == 0)
 			continue;
@@ -752,16 +758,16 @@ mask2vec(const struct aiv *aiv, struct aiv *vec)
 	int s = aiv->sv.shift;
 	int e = s + (mask->E - mask->S);
 	int i;
-	for (i = 0; i < aiv->asiz; i += 8, s -= 8, e -= 8) {
+	for (i = 0; i < aiv->asiz; i += NBBY, s -= NBBY, e -= NBBY) {
 		uint8_t b;
-		if (s >= 8 || e <= 0)
+		if (s >= NBBY || e <= 0)
 			b = 0;
 		else {
 			const int p = MAX(0, s);
 			const int q = MAX(0, e);
 			b = _BfMaskWN(1, p, q - p);
 		}
-		vec->sv.u.vec.vs[i / 8] = b;
+		vec->sv.u.vec.vs[i / NBBY] = b;
 	}
 }
 
@@ -770,14 +776,14 @@ v2vec(const struct aiv *aiv, struct aiv *vec)
 {
 	const int v = aiv->sv.u.v;
 	int i;
-	for (i = 0; i < aiv->asiz; i += 8) {
+	for (i = 0; i < aiv->asiz; i += NBBY) {
 		const int shift = aiv->sv.shift - i;
 		uint8_t b;
-		if (shift > 8 || shift < -31)
+		if (shift > NBBY || shift < -31)
 			b = 0;
 		else
 			b = (shift > 0) ?  (v << shift) : (v >> -shift);
-		vec->sv.u.vec.vs[i / 8] = b;
+		vec->sv.u.vec.vs[i / NBBY] = b;
 	}
 }
 
@@ -791,10 +797,10 @@ print_vec(char *str, const size_t len, const struct aiv *aiv,
 	/* Print mask as hex string by 8-bit from MSB. */
 	int n = 0;
 	int asiz;
-	for (asiz = aiv->asiz - 8; asiz >= 0; asiz -= 8) {
+	for (asiz = aiv->asiz - NBBY; asiz >= 0; asiz -= NBBY) {
 		assert(n < len);
 		n += snprintf(str + n, len - n, "%02x",
-		    vec->sv.u.vec.vs[asiz / 8]);
+		    vec->sv.u.vec.vs[asiz / NBBY]);
 	}
 }
 
@@ -832,9 +838,9 @@ dump(struct prefix *prefix)
 	printf(" *\n");
 
 	int i;
-	for (i = 8; i <= 64; i <<= 1) {
+	for (i = MINASIZ; i <= MAXASIZ; i <<= 1) {
 		printf(" * %s endian memory layout view (%d-bit access):\n",
-		    (i == 8) ? "little" : "big", i);
+		    (i == MINASIZ) ? "little" : "big", i);
 		dump_fields_addresses(layout, i);
 		dump_fields_bits(layout, i);
 		printf(" *\n");
@@ -852,7 +858,7 @@ dump_layout_alloc(void)
 	struct layout *layout;
 
 	layout = calloc(sizeof(*layout), 1);
-	layout->size = (global->cur_prefix->size + 64) & ~(64 - 1);
+	layout->size = (global->cur_prefix->size + MAXASIZ) & ~(MAXASIZ - 1);
 	layout->buf = malloc(layout->size);
 	memset(layout->buf, '.', layout->size);
 
