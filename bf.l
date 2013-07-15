@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include "queue.h"
 
-#define MINASIZ NBBY
+#define MINASIZ (1 * NBBY)
 #define MAXASIZ (8 * NBBY)
 
 long long strtonum(const char *, long long, long long, const char **);
@@ -219,7 +219,10 @@ nl		[\n]
 #include <string.h>
 #include <unistd.h>
 
-#include "bf.h"
+#ifndef NBBY
+#define NBBY		8
+#define NBBYSTR		"8"
+#endif
 
 #ifndef MAX
 #define MAX(a, b)	(((a) > (b)) ? (a) : (b))
@@ -466,15 +469,14 @@ struct sv {
 
 /* Value with access-size and index. */
 struct aiv {
-	/* Real value is, (v << shift + (asiz * index)). */
+	/* Real value is, (v << shift + (asiz * aidx)). */
 	int asiz;
-	int index;
+	int aidx;
 	struct sv sv;
 };
 
 /* Access. */
 struct accs {
-	const struct enumers *enumers;
 	int align;
 	int minasiz;
 	struct aiv aivs[4];
@@ -488,7 +490,7 @@ static void analyze_accs(const struct mask *, struct accs *);
 static int calc_access_align(const struct mask *);
 static int calc_access_size(const int, const struct mask *);
 static int calc_access_shift(const int, const int, const struct mask *);
-static void print_accs(const char *, struct accs *);
+static void print_accs(const char *, struct accs *, const struct enumers *);
 static void print_mask(const char *, const struct aiv *, const int);
 static void print_enumer(const char *, const struct aiv *,
     const struct enumer *);
@@ -500,9 +502,7 @@ static void num2vec(const struct aiv *, struct aiv *);
 static void
 field_print(const struct field *field)
 {
-	struct accs accs_storage = {
-		.enumers = &field->enumers,
-	}, *accs = &accs_storage;
+	struct accs accs_storage, *accs = &accs_storage;
 	analyze_accs(&field->mask, accs);
 
 	const char *fmt = "/* field: name=%s offset=%d width=%d */\n";
@@ -525,7 +525,7 @@ field_print(const struct field *field)
 		snprintf(prefixstr, sizeof(prefixstr), "%s%s%s",
 		    global->cur_prefix->name ? global->cur_prefix->name : "",
 		    global->cur_prefix->name ? "_" : "", name);
-		print_accs(prefixstr, accs);
+		print_accs(prefixstr, accs, &field->enumers);
 	}
 }
 
@@ -542,7 +542,7 @@ analyze_accs(const struct mask *mask, struct accs *accs)
 	for (asiz = accs->minasiz; asiz <= MAXASIZ; asiz <<= 1) {
 		struct aiv *aiv = &accs->aivs[asiz2idx(asiz)];
 		aiv->asiz = asiz;
-		aiv->index = mask->S / asiz;
+		aiv->aidx = mask->S / asiz;
 		aiv->sv.shift = calc_access_shift(accs->align, asiz, mask);
 		aiv->sv.u.mask = *mask;
 	}
@@ -628,7 +628,8 @@ calc_access_shift(const int align, const int asiz, const struct mask *mask)
 }
 
 static void
-print_accs(const char *prefixstr, struct accs *accs)
+print_accs(const char *prefixstr, struct accs *accs,
+    const struct enumers *enumers)
 {
 	/* Provide all access widths >A. */
 	int asiz;
@@ -639,7 +640,7 @@ print_accs(const char *prefixstr, struct accs *accs)
 		struct aiv *aiv = &accs->aivs[asiz2idx(asiz)];
 		print_mask(prefixstr, aiv, accs->align);
 		struct enumer *enumer;
-		SIMPLEQ_FOREACH(enumer, accs->enumers, entry) {
+		SIMPLEQ_FOREACH(enumer, enumers, entry) {
 			print_enumer(prefixstr, aiv, enumer);
 		}
 	}
@@ -651,7 +652,7 @@ print_mask(const char *prefixstr, const struct aiv *aiv, const int align)
 {
 #define P prefixstr
 #define A aiv->asiz
-	printf("#define %s_INDEX_%d %d\n", P, A, aiv->index);
+	printf("#define %s_INDEX_%d %d\n", P, A, aiv->aidx);
 
 	if (global->full) {
 		printf("#define %s_OCV_%d(p) "
