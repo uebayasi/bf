@@ -634,7 +634,7 @@ static void
 print_accs(const char *prefixstr, struct accs *accs,
     const struct enumers *enumers)
 {
-	/* Provide all access widths >A. */
+	/* Provide all access widths >minasiz. */
 	int asiz;
 	for (asiz = accs->minasiz; asiz <= MAXASIZ; asiz <<= 1) {
 		/* Follow explicit access sizes when specified. */
@@ -649,7 +649,7 @@ print_accs(const char *prefixstr, struct accs *accs,
 	}
 }
 
-/* Print accessors.  Assume the resulting code uses bf.h. */
+/* Print accessors. */
 static void
 print_mask(const char *prefixstr, const struct aiv *aiv, const int align)
 {
@@ -748,6 +748,7 @@ print_mask(const char *prefixstr, const struct aiv *aiv, const int align)
 	}
 }
 
+/* Print enum constants. */
 static void
 print_enumer(const char *prefixstr, const struct aiv *aiv,
     const struct enumer *enumer)
