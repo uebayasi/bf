@@ -679,6 +679,17 @@ print_mask(const char *prefixstr, const struct aiv *aiv, const int align)
 		    P, A, P, A, P, A);
 	}
 
+	char maskstr[32];
+	print_vec(maskstr, sizeof(maskstr), aiv, mask2vec);
+
+	const struct mask *mask = &aiv->sv.u.mask;
+	printf("#define %s_SHIFT_%d %d\n",
+	    P, A, aiv->sv.shift);
+	printf("#define %s_WIDTH_%d %d\n",
+	    P, A, mask->E - mask->S);
+	printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
+	    P, A, A, maskstr);
+
 	static char readstr[256];
 	static char issetstr[256];
 	static char clearstr[256];
@@ -702,16 +713,6 @@ print_mask(const char *prefixstr, const struct aiv *aiv, const int align)
 			    P, A);
 		}
 	} else {
-		char maskstr[32];
-		print_vec(maskstr, sizeof(maskstr), aiv, mask2vec);
-
-		const struct mask *mask = &aiv->sv.u.mask;
-		printf("#define %s_SHIFT_%d %d\n",
-		    P, A, aiv->sv.shift);
-		printf("#define %s_WIDTH_%d %d\n",
-		    P, A, mask->E - mask->S);
-		printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
-		    P, A, A, maskstr);
 		if (global->full) {
 			snprintf(readstr, sizeof(readstr),
 			    "((%s_CV_%d(p) & %s_MASK_%d) >> %s_SHIFT_%d)",
