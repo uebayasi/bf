@@ -21,7 +21,11 @@
 #ifndef __BF_H__
 #define __BF_H__
 
+#ifndef _KERNEL
 #include <stdint.h>
+#else
+#include <sys/stdint.h>
+#endif
 
 /*
  * Base definitions
@@ -115,26 +119,32 @@
 
 #define BF_OCV(name, N, p)	(*((const uint##N##_t *)(p) + name##_INDEX_##N))
 #define BF_OV(name, N, p)	(*((uint##N##_t *)(p) + name##_INDEX_##N))
-#define BF_CV(name, N, p)	name##_SWAP_##N(name##_OCV_##N(p))
+#define BF_CV(name, N, p)	name##_SWAP_##N(BF_OCV(name, N, p))
 #define BF_V(name, N, p, v)	do { \
-					name##_OV_##N(p) = name##_SWAP_##N(v); \
+					BF_OV(name, N, p) = name##_SWAP_##N(v); \
+				} while (0)
+#define BF_V_AND(name, N, p, v)	do { \
+					BF_OV(name, N, p) &= name##_SWAP_##N(v); \
+				} while (0)
+#define BF_V_OR(name, N, p, v)	do { \
+					BF_OV(name, N, p) |= name##_SWAP_##N(v); \
+				} while (0)
+#define BF_V_XOR(name, N, p, v)	do { \
+					BF_OV(name, N, p) ^= name##_SWAP_##N(v); \
 				} while (0)
 
-#define BF_READ(name, N, p)	((name##_CV_##N(p) & name##_MASK_##N) >> name##_SHIFT_##N)
-#define BF_ISSET(name, N, p)	((name##_CV_##N(p) & name##_MASK_##N) != 0)
+#define BF_READ(name, N, p)	((BF_CV(name, N, p) & name##_MASK_##N) >> name##_SHIFT_##N)
+#define BF_ISSET(name, N, p)	((BF_CV(name, N, p) & name##_MASK_##N) != 0)
 #define BF_CLEAR(name, N, p)	do { \
-				    name##_V_##N(p, \
-					(name##_CV_##N(p) & ~name##_MASK_##N)); \
+				    BF_V_AND(name, N, p, ~(name##_MASK_##N)); \
 				} while (0)
 #define BF_SET(name, N, p)	do { \
-				    name##_V_##N(p, \
-					(name##_CV_##N(p) | \
-					 ((~name##_CV_##N(p)) & name##_MASK_##N))); \
+				    BF_V_OR(name, N, p, name##_MASK_##N); \
 				} while (0)
 #define BF_WRITE(name, N, p, v)	do { \
-				    name##_V_##N(p, \
-					(name##_CV_##N(p) & ~name##_MASK_##N) | \
-					 (((v) << name##_SHIFT_##N) & name##_MASK_##N)); \
+				    BF_V(name, N, p, \
+					(BF_CV(name, N, p) & ~name##_MASK_##N) | \
+					 ((v) << name##_SHIFT_##N)); \
 				} while (0)
 
 #endif /* __BF_H__ */
