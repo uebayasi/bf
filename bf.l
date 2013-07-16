@@ -690,13 +690,13 @@ print_mask(const char *prefixstr, const struct aiv *aiv, const int align)
 	printf("#define %s_MASK_%d UINT%d_C(0x%s)\n",
 	    P, A, A, maskstr);
 
-	static char readstr[256];
-	static char issetstr[256];
-	static char clearstr[256];
-	static char setstr[256];
-	static char writestr[256];
-	if (align == aiv->asiz) {
-		if (global->full) {
+	if (global->full) {
+		static char readstr[256];
+		static char issetstr[256];
+		static char clearstr[256];
+		static char setstr[256];
+		static char writestr[256];
+		if (align == aiv->asiz) {
 			snprintf(readstr, sizeof(readstr),
 			    "%s_CV_%d(p)", P, A);
 			snprintf(issetstr, sizeof(readstr),
@@ -711,9 +711,7 @@ print_mask(const char *prefixstr, const struct aiv *aiv, const int align)
 			snprintf(writestr, sizeof(writestr),
 			    "do { %s_V_%d(p, v); } while (0)",
 			    P, A);
-		}
-	} else {
-		if (global->full) {
+		} else {
 			snprintf(readstr, sizeof(readstr),
 			    "((%s_CV_%d(p) & %s_MASK_%d) >> %s_SHIFT_%d)",
 			    P, A, P, A, P, A);
@@ -739,8 +737,6 @@ print_mask(const char *prefixstr, const struct aiv *aiv, const int align)
 			    "} while (0)",
 			    P, A, P, A, P, A, P, A, P, A);
 		}
-	}
-	if (global->full) {
 		printf("#define %s_READ_%d(p) %s\n", P, A, readstr);
 		printf("#define %s_ISSET_%d(p) %s\n", P, A, issetstr);
 		printf("#define %s_CLEAR_%d(p) %s\n", P, A, clearstr);
@@ -765,6 +761,23 @@ print_enumer(const char *prefixstr, const struct aiv *aiv,
 	    P, A, enumer->name, A, enumerstr);
 #undef	A
 #undef	P
+}
+
+static void
+print_vec(char *str, const size_t len, const struct aiv *aiv,
+    void (*x2vec)(const struct aiv *, struct aiv *))
+{
+	struct aiv vec_storage, *vec = &vec_storage;
+	(*x2vec)(aiv, vec);
+
+	/* Print mask as hex string by 8-bit from MSB. */
+	int n = 0;
+	int asiz;
+	for (asiz = aiv->asiz - NBBY; asiz >= 0; asiz -= NBBY) {
+		assert(n < len);
+		n += snprintf(str + n, len - n, "%02x",
+		    vec->sv.u.vec.vs[asiz / NBBY]);
+	}
 }
 
 /* 8-bit range mask. */
@@ -805,23 +818,6 @@ num2vec(const struct aiv *aiv, struct aiv *vec)
 		else
 			b = (shift > 0) ?  (v << shift) : (v >> -shift);
 		vec->sv.u.vec.vs[i / NBBY] = b;
-	}
-}
-
-static void
-print_vec(char *str, const size_t len, const struct aiv *aiv,
-    void (*x2vec)(const struct aiv *, struct aiv *))
-{
-	struct aiv vec_storage, *vec = &vec_storage;
-	(*x2vec)(aiv, vec);
-
-	/* Print mask as hex string by 8-bit from MSB. */
-	int n = 0;
-	int asiz;
-	for (asiz = aiv->asiz - NBBY; asiz >= 0; asiz -= NBBY) {
-		assert(n < len);
-		n += snprintf(str + n, len - n, "%02x",
-		    vec->sv.u.vec.vs[asiz / NBBY]);
 	}
 }
 
