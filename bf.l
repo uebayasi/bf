@@ -21,6 +21,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 #include "queue.h"
 
 #define MINASIZ (1 * NBBY)
@@ -221,6 +222,8 @@ nl		[\n]
 
 #ifndef NBBY
 #define NBBY		8
+#endif
+#ifndef NBBYSTR
 #define NBBYSTR		"8"
 #endif
 
