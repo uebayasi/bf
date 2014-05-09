@@ -88,6 +88,8 @@ struct global {
 } global_storage = {
 	.prefixes = SIMPLEQ_HEAD_INITIALIZER(global_storage.prefixes),
 }, *global = &global_storage;
+
+static void yyunput YY_PROTO(( int c, char *buf_ptr )) __unused;
 %}
 
 comment		[#]
