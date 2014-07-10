@@ -1,4 +1,4 @@
-.PHONY: all clean
+.PHONY: all install clean
 
 all: bf
 
@@ -7,6 +7,9 @@ bf: bf.yy.c bf.h queue.h
 
 bf.yy.c: bf.l
 	lex -obf.yy.c bf.l
+
+install:
+	install bf /usr/local/bin/bf
 
 clean:
 	rm -f bf bf.yy.c
