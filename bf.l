@@ -24,6 +24,10 @@
 #include <string.h>
 #include "queue.h"
 
+#ifndef YY_PROTO
+#define YY_PROTO(x) x
+#endif
+
 #define MINASIZ (1 * NBBY)
 #define MAXASIZ (8 * NBBY)
 
@@ -90,6 +94,7 @@ struct global {
 }, *global = &global_storage;
 
 static void yyunput YY_PROTO(( int c, char *buf_ptr )) __unused;
+static int input(void) __unused;
 %}
 
 comment		[#]
